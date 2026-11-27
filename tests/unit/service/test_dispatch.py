@@ -13,7 +13,7 @@ import pytest
 from grenslan.contracts.envelope import Issue, IssueCode, Status
 from grenslan.contracts.registry import ToolRegistry
 from grenslan.service.context import InvocationContext
-from grenslan.service.dispatch import DispatchKind, Invocation, ToolDispatcher, ToolOutcome
+from grenslan.service.dispatch import ArgumentLimits, DispatchKind, Invocation, ToolDispatcher, ToolOutcome
 from grenslan.service.profiles import profile_tools
 
 from minimal_requests import MINIMAL_REQUESTS
@@ -70,6 +70,7 @@ def make(
     *,
     policy: Any = None,
     profile: frozenset[str] | None = None,
+    argument_limits: ArgumentLimits | None = None,
 ) -> ToolDispatcher:
     return ToolDispatcher(
         registry,
@@ -77,6 +78,7 @@ def make(
         policy=policy or AllowAll(),
         profile=profile if profile is not None else profile_tools("full"),
         max_request_bytes=64 * 1024,
+        argument_limits=argument_limits or ArgumentLimits(max_string_chars=4096, max_array_items=100, max_depth=16),
     )
 
 
@@ -254,3 +256,60 @@ async def test_exposed_tools_are_implemented_profiled_and_permitted(registry: To
 def test_handler_for_unknown_tool_is_rejected_at_construction(registry: ToolRegistry) -> None:
     with pytest.raises(ValueError, match="unknown tool"):
         make(registry, {"shell_exec": completed_search()})
+
+
+SMALL = ArgumentLimits(max_string_chars=16, max_array_items=2, max_depth=3)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "location"),
+    [
+        ({"query": "x" * 17}, "/query"),
+        ({"query": "x", "include_domains": ["a", "b", "c"]}, "/include_domains"),
+        ({"query": "x", "include_domains": ["a", "y" * 17]}, "/include_domains/1"),
+        ({"query": "x", "cursor": "c" * 17}, "/cursor"),
+    ],
+)
+async def test_configured_argument_bounds_reject_before_execution(
+    registry: ToolRegistry, arguments: dict[str, Any], location: str
+) -> None:
+    handler = completed_search()
+    outcome = await make(registry, {"web_search": handler}, argument_limits=SMALL).invoke(
+        "web_search", arguments, CONTEXT
+    )
+    assert outcome.kind is DispatchKind.INVALID_REQUEST
+    assert outcome.envelope is not None
+    assert outcome.envelope["issues"][0]["message"].startswith(location + ":")
+    assert handler.calls == []
+
+
+async def test_object_keys_count_toward_string_bound(registry: ToolRegistry) -> None:
+    outcome = await make(registry, {"web_search": completed_search()}, argument_limits=SMALL).invoke(
+        "web_search", {"query": "x", "k" * 17: 1}, CONTEXT
+    )
+    assert outcome.kind is DispatchKind.INVALID_REQUEST
+
+
+async def test_decoded_arguments_depth_is_bounded_without_recursion(registry: ToolRegistry) -> None:
+    nested: Any = 1
+    for _ in range(100_000):
+        nested = [nested]
+    limits = ArgumentLimits(max_string_chars=16, max_array_items=2, max_depth=16)
+    outcome = await make(registry, {"web_search": completed_search()}, argument_limits=limits).invoke(
+        "web_search", {"query": "x", "include_domains": nested}, CONTEXT
+    )
+    assert outcome.kind is DispatchKind.INVALID_REQUEST
+    assert outcome.envelope is not None
+    assert "depth" in outcome.envelope["issues"][0]["message"]
+
+
+async def test_arguments_within_bounds_are_accepted(registry: ToolRegistry) -> None:
+    outcome = await make(registry, {"web_search": completed_search()}, argument_limits=SMALL).invoke(
+        "web_search", {"query": "x" * 16, "include_domains": ["a", "b"]}, CONTEXT
+    )
+    assert outcome.kind is DispatchKind.OUTCOME
+
+
+def test_argument_limits_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        ArgumentLimits(max_string_chars=0, max_array_items=1, max_depth=1)

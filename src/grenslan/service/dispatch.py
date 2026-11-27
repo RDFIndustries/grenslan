@@ -7,8 +7,9 @@ request (TC-005, TC-047, TC-049, TC-054).
 
 Order of checks: the tool must exist in the canonical registry; the trusted
 context must be permitted to use it; it must be implemented in this deployment
-and exposed by the configured profile; its arguments must pass the projected
-input schema and the handler's semantic checks. Only then is the handler run.
+and exposed by the configured profile; its arguments must stay within the
+operator's size and depth bounds, then pass the projected input schema and the
+handler's semantic checks. Only then is the handler run.
 Every envelope the dispatcher returns has passed the tool's output schema.
 """
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
@@ -97,6 +99,46 @@ def _freeze(value: Any) -> Any:
     return value
 
 
+@dataclass(frozen=True, slots=True)
+class ArgumentLimits:
+    """Operator policy bounds on decoded arguments, applied before schema validation (TC-049)."""
+
+    max_string_chars: int
+    max_array_items: int
+    max_depth: int
+
+    def __post_init__(self) -> None:
+        if min(self.max_string_chars, self.max_array_items, self.max_depth) < 1:
+            raise ValueError("argument limits must be positive")
+
+
+def _bound_issue(arguments: Any, limits: ArgumentLimits) -> Issue | None:
+    """Return the first bound violation, walking breadth first without recursion."""
+    pending: deque[tuple[Any, tuple[str, ...], int]] = deque([(arguments, (), 1)])
+    while pending:
+        value, path, depth = pending.popleft()
+        location = "/" + "/".join(part.replace("~", "~0").replace("/", "~1") for part in path)
+        if isinstance(value, str):
+            if len(value) > limits.max_string_chars:
+                return Issue(IssueCode.INVALID_REQUEST, f"{location}: string exceeds the configured maximum length")
+        elif isinstance(value, dict | list | tuple):
+            if depth > limits.max_depth:
+                return Issue(IssueCode.INVALID_REQUEST, f"{location}: arguments exceed the configured maximum depth")
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if isinstance(key, str) and len(key) > limits.max_string_chars:
+                        return Issue(
+                            IssueCode.INVALID_REQUEST,
+                            f"{location}: property name exceeds the configured maximum length",
+                        )
+                    pending.append((item, (*path, str(key)), depth + 1))
+            else:
+                if len(value) > limits.max_array_items:
+                    return Issue(IssueCode.INVALID_REQUEST, f"{location}: array exceeds the configured maximum size")
+                pending.extend((item, (*path, str(index)), depth + 1) for index, item in enumerate(value))
+    return None
+
+
 def _schema_issues(errors: Sequence[SchemaError]) -> list[Issue]:
     return [Issue(IssueCode.INVALID_REQUEST, f"{error.location}: {error.message}") for error in errors]
 
@@ -110,6 +152,7 @@ class ToolDispatcher:
         policy: AuthorizationPolicy,
         profile: frozenset[str],
         max_request_bytes: int,
+        argument_limits: ArgumentLimits,
     ) -> None:
         unknown = set(handlers) - set(registry.tool_names)
         if unknown:
@@ -121,6 +164,7 @@ class ToolDispatcher:
         self._policy = policy
         self._profile = profile
         self._max_request_bytes = max_request_bytes
+        self._argument_limits = argument_limits
 
     def exposed_tools(self, context: InvocationContext) -> tuple[str, ...]:
         """Tools to advertise to this context: implemented, in the profile and permitted."""
@@ -167,6 +211,9 @@ class ToolDispatcher:
         if handler is None or tool not in self._profile:
             return self._failed(DispatchKind.OUTCOME, request_id, [_UNSUPPORTED])
 
+        bound = _bound_issue(arguments, self._argument_limits)
+        if bound is not None:
+            return self._failed(DispatchKind.INVALID_REQUEST, request_id, [bound])
         schema_errors = self._registry.input_errors(tool, arguments)
         if schema_errors:
             return self._failed(DispatchKind.INVALID_REQUEST, request_id, _schema_issues(schema_errors))

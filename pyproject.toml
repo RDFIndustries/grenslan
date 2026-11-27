@@ -71,6 +71,8 @@ known-local-folder = ["minimal_requests", "config_fixtures"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
+# TypeAlias form is required: the aliases must compare equal to the adopted declarations.
+"src/grenslan/providers/contract.py" = ["UP040"]
 
 [tool.mypy]
 python_version = "3.12"

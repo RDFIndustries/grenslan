@@ -374,7 +374,7 @@ Complete applicable rows before the dependent code work. The approved PRP permit
 
 ## 6. Implementation progress
 
-### 6.1 F02: canonical contracts and common dispatch (in progress)
+### 6.1 F02: canonical contracts and common dispatch
 
 Implemented in `src/grenslan/contracts/` and `src/grenslan/service/`:
 
@@ -416,14 +416,27 @@ Cross-field checks implemented:
 
 Validation on 2026-11-26 (same environment): `scripts/check.sh` passed, with 538 unit tests. Mutation checks: disabling the limit-override check, the endpoint-destination check or the isolated-mode check each fails its tests, and each mutation was reverted.
 
-Interpretations recorded for maintainer review:
+Interpretations, approved by the maintainer on 2026-11-27:
 - (a) Credential-like query parameters are detected by name, using the markers key, token, secret, password, passwd, auth, signature, sig and credential. Any query parameter whose name contains one of these is rejected.
 - (b) An enabled intelligence provider while `optional_intelligence_enabled` is false is not a configuration error. It simply never executes.
 - (c) In `offline` and `internal_only` modes, destinations are not yet checked statically for private addresses. Runtime egress enforcement (Section 4.8) remains authoritative.
 
-Remaining for F02:
-- typed request records for the enabled tools;
-- documented environment overrides validated through the same path (PC-059);
-- the separate ingress and authentication settings schema (PRP-001 §6).
+Typed records and argument bounds, added 2026-11-27:
 
-The MCP and REST adapters on the dispatcher belong to F03.
+| Component | Behaviour | Contract basis |
+|---|---|---|
+| `providers/contract.py` | Runtime Provider Contract 1.0 types: common records and protocols, the search family, and the shared records it depends on (`Range`, `Region`, `Locator`, `Heading`, `Metadata`). A conformance test loads the adopted `PROVIDER_INTERFACES.py` and compares field names, order, annotations and defaults, protocol method signatures and every vocabulary alias. Construction enforces the PC-058 invariants: partial needs a value and an issue; failed, cancelled, timed_out and interrupted need an issue; issue codes are known and messages are 1–1000 characters; limits are positive (redirects and retries may be zero); a discovery has rank ≥ 1, carries a URL, image URL or source-page URL, and has unique `category_metadata` names; record tuples contain only their declared types. The other provider families are added with the milestones that implement them. | PC-055, PC-057, PC-058 |
+| `contracts/requests.py` | Typed request records for `web_search`, `image_search`, `capabilities_get` and `operation_status`, `operation_results` and `operation_cancel`, built from schema-validated arguments. Omitted fields take the schema default, or `None` where the schema declares none. A test checks field names, required fields, defaults and enum vocabularies against the canonical schemas. Request-local semantic checks: `date_from` after `date_to`; a domain both included and excluded; `retrieve.max_sources` greater than `max_results`. | TC-047, TC-049 |
+| `service/dispatch.py` (`ArgumentLimits`) | Operator bounds on string length (including property names), array size and nesting depth, checked breadth-first without recursion before schema validation, so decoded MCP arguments get the same protection as REST bodies. | TC-049 |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed, with 654 unit tests. Mutation checks: changing a provider record default, renaming a protocol parameter, removing an issue code, or reordering a request enum each fails the conformance tests. Each mutation was reverted.
+
+F02 status: the work package's code is complete and its deliverables (schema conformance tests and the common authorized invocation boundary) exist, so the Archon task is in review.
+
+Gate evidence:
+- F-G01: the schema portion is satisfied: 32 tools, and packaged copies byte-identical to the adopted contracts. Installation and search startup remain.
+- F-G16: dispatcher-level exposure and explicit `unsupported_capability` responses are evidenced. Capability-state projection (`capabilities_get`) belongs to F04, and search composition to F06.
+
+Moved to later work packages by PRP-001:
+- F04: ingress and authentication settings, environment overrides, and wiring the configured `ArgumentLimits` and request-size values.
+- F03: the MCP and REST adapters on the dispatcher.

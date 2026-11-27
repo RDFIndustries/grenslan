@@ -19,17 +19,17 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any, get_args
 from urllib.parse import parse_qsl, urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 from grenslan.contracts.registry import describe_validation_error
+from grenslan.providers.contract import Family
 
 PACKAGED_SCHEMA = Path(__file__).with_name("PROVIDER_CONFIG_SCHEMA.json")
 
-Family = Literal["search", "retrieval", "browser", "content", "ocr", "intelligence"]
-FAMILIES: tuple[Family, ...] = ("search", "retrieval", "browser", "content", "ocr", "intelligence")
+FAMILIES: tuple[Family, ...] = get_args(Family)
 NETWORK_FAMILIES = frozenset({"search", "retrieval", "browser", "intelligence"})
 ISOLATED_MODES = frozenset({"offline", "internal_only"})
 _DEFAULT_PORTS = {"http": 80, "https": 443}
