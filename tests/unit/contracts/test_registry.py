@@ -143,3 +143,12 @@ def test_output_validation_rejects_completed_without_result(registry: ToolRegist
 def test_upload_result_schema_is_available(registry: ToolRegistry) -> None:
     schema = registry.upload_result_schema()
     assert schema["properties"]["schema_version"] == {"const": "1.0"}
+
+
+def test_unresolved_reference_is_a_registry_error() -> None:
+    from grenslan.contracts.registry import RegistryError
+
+    document = json.loads(DOCS_REGISTRY.read_text(encoding="utf-8"))
+    document["$defs"]["web_search_input"]["properties"]["query"] = {"$ref": "#/$defs/Missing"}
+    with pytest.raises(RegistryError, match="unresolved"):
+        ToolRegistry(document)

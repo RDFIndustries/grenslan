@@ -89,12 +89,14 @@ class ToolRegistry:
             self._upload_ref: str = document["supporting_schemas"]["upload_response"]["$ref"]
         except (KeyError, TypeError) as exc:
             raise RegistryError("tool registry is missing a required top-level member") from exc
+        # Every definition is checked against the meta-schema once; a projection
+        # only selects definitions and resolves references between them.
+        Draft202012Validator.check_schema({"$schema": self._dialect, "$defs": self._definitions})
         self._projections: dict[str, dict[str, Any]] = {}
         self._validators: dict[str, Draft202012Validator] = {}
         for name, record in self._tools.items():
             for direction in ("inputSchema", "outputSchema"):
                 schema = self._project(record[direction]["$ref"])
-                Draft202012Validator.check_schema(schema)
                 key = f"{name}:{direction}"
                 self._projections[key] = schema
                 self._validators[key] = Draft202012Validator(schema, format_checker=FormatChecker())
@@ -124,6 +126,8 @@ class ToolRegistry:
             if not ref.startswith(_LOCAL_REF_PREFIX):
                 raise RegistryError(f"non-local schema reference {ref!r}")
             name = ref.removeprefix(_LOCAL_REF_PREFIX)
+            if name not in self._definitions:
+                raise RegistryError(f"unresolved schema reference {ref!r}")
             if name not in reachable:
                 reachable[name] = copy.deepcopy(self._definitions[name])
                 pending.extend(_local_refs(reachable[name]))

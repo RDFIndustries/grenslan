@@ -440,3 +440,22 @@ Gate evidence:
 Moved to later work packages by PRP-001:
 - F04: ingress and authentication settings, environment overrides, and wiring the configured `ArgumentLimits` and request-size values.
 - F03: the MCP and REST adapters on the dispatcher.
+
+### 6.2 F03: secure ingress and trusted context (in progress)
+
+Implemented in `src/grenslan/server/`:
+
+| Component | Behaviour | Contract basis |
+|---|---|---|
+| `server/tls.py` | Server TLS context: TLS 1.2 minimum (1.3 negotiated when offered), compression and renegotiation disabled. Missing or unreadable certificate material fails with a generic error that does not echo file contents. | AD-428, TC-002 |
+| `server/auth.py` | Operator-issued application credentials, held only as SHA-256 digests and compared in constant time. Exactly one `Authorization: Bearer` header of at most 4096 bytes is accepted; every failure carries the same message. A credential binds an application namespace, permitted tools and, only when delegation is allowed, the right to assert `Grenslan-User-Id`, `Grenslan-Agent-Id` and `Grenslan-Instance-Id`. Unknown `Grenslan-*` headers, duplicates, non-ASCII values and values outside the identity pattern get 400; delegation headers from a non-delegating credential get 403. The store is replaced as a whole for rotation and revocation and notifies watchers of revoked or changed records. | TC-003, TC-048 |
+| `server/app.py` | Request gate for every route: exactly one `Host` naming a configured host (else 400), and an `Origin`, when present, must be configured (else 403, before authentication). `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` on every response. REST `POST /api/v1/tools/{tool}`: authentication, then `application/json` (UTF-8 only), then a body bounded by both the declared and the streamed length, then the common dispatcher. Statuses: 200, 202 for accepted, 400, 401 with a Bearer challenge, 403, 404, 405, 413. Artifact and upload routes are not registered until their milestones. | TC-048, TC-050 |
+| `server/mcp_endpoint.py` | MCP Streamable HTTP on `POST /mcp`, revision 2026-07-28 only, using the SDK in stateless JSON-response mode behind a gate. Other methods get 405 with `Allow: POST`. A missing or duplicated `MCP-Protocol-Version` gets 400 with -32020; any other version, including every handshake-era version, gets 400 with -32022 and the supported list. Legacy session headers are stripped and no session is issued. Discovery lists only tools the trusted context may use, with the canonical projected schemas. Results carry the canonical envelope as `structuredContent`, with `isError` for failure statuses and a text copy bounded to 8 KiB. An unknown tool is a protocol error (-32602). | TC-001, TC-048, F-G02, F-G03 |
+| `server/app_support.py` | Shared ingress pieces. `run_while_authorized` cancels in-flight work when its credential is revoked or changed; REST then answers 401 and MCP a protocol error. | TC-048, AD-428 |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 741 tests, of which 49 are integration tests against a real HTTPS server on loopback. They cover authentication failures, delegation and forged identity, unpermitted and unknown tools, content type and size limits, revocation of a pending request and of in-flight work on both interfaces, refusal of plaintext HTTP and of TLS below 1.2, rejection by a client that does not trust the test CA, TLS 1.3 negotiation, Host and Origin enforcement, protocol version rejection, the legacy `initialize` handshake and MCP discovery and calls through the SDK client in current-revision mode. Mutation checks: skipping the protocol version check (3 failures), the Origin check (2), the per-context tool filter (1), or the revocation watch (2) each fails the suite, and each mutation was reverted. The test server shuts down within two seconds, so a regression of this kind fails rather than hangs.
+
+Remaining for F03:
+- The standards-compatible MCP authorization profile (TC-048): OAuth protected-resource metadata, a `resource_metadata` challenge and audience-checked token validation. The token validation method awaits the maintainer's decision.
+- Redacted security diagnostics for authentication, delegation and gate rejections.
+- Certificate replacement without restart.

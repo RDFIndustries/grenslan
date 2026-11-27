@@ -69,6 +69,7 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 - `fqdn` (runtime, via `jsonschema[format-nongpl]`) and `pathspec` (dev only, via `mypy`) are MPL-2.0, a file-level copyleft licence. Distributing unmodified MPL-2.0 files alongside Apache-2.0 code is permitted; modified MPL-2.0 files must remain available under MPL-2.0. Neither file is modified.
 - `cryptography` is dual-licensed Apache-2.0 OR BSD-3-Clause, and `packaging` Apache-2.0 OR BSD-2-Clause.
 - `typing_extensions` is PSF-2.0.
+- `cryptography` and `httpx2` are also declared as direct dev dependencies, at the versions already locked for runtime. Tests use `cryptography` to generate a throwaway CA and server certificate, and `httpx2` as the HTTPS and MCP client. Neither adds a package to the lock.
 - `pyyaml` (added for the operator configuration loader, PC-059) has no dependencies and ships CPython 3.12 manylinux wheels for x86_64 and aarch64. Only its safe loader is used, behind `grenslan.config.yaml_loader`, which additionally rejects duplicate keys, every explicit tag, anchors, aliases and merge keys.
 - SearXNG (AGPL-3.0) is not a Python dependency of this package. Its distribution and corresponding-source obligations are tracked separately in the validation record.
 - Not yet reviewed: licence texts and notice files that must ship in the container, and security advisories for each pinned version.

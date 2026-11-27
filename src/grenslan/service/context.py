@@ -2,13 +2,14 @@
 
 The application namespace comes from the authenticated credential; user,
 agent and instance identifiers come from the trusted ``Grenslan-*`` headers
-that the credential is permitted to assert. None of them is ever read from tool
+that the credential is permitted to assert. ``permissions`` are the tool names
+the credential is authorized to use. None of these is ever read from tool
 arguments, which the closed input schemas reject.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +18,7 @@ class InvocationContext:
     user_id: str | None
     agent_id: str | None
     instance_id: str | None
+    permissions: frozenset[str] = field(default=frozenset())
 
     def __post_init__(self) -> None:
         if not self.application_id:
