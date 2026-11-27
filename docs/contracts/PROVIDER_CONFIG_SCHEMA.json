@@ -1,0 +1,951 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Grenslan provider and execution configuration 1.0 (adopted)",
+  "description": "Provider configuration portion of operator YAML, represented as JSON. Cross-field, adapter-specific, authorization and deployment checks are mandatory. No secrets or executable code.",
+  "$defs": {
+    "Limits": {
+      "type": "object",
+      "properties": {
+        "max_input_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_download_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_output_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_temp_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_cpu_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_pixels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_expansion_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_recursion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_redirects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "RequiredLimits": {
+      "type": "object",
+      "properties": {
+        "max_input_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_download_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_output_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_temp_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_memory_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_cpu_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_pixels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_expansion_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_recursion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_redirects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "max_input_bytes",
+        "max_download_bytes",
+        "max_output_bytes",
+        "max_temp_bytes",
+        "max_memory_bytes",
+        "max_cpu_ms",
+        "max_pixels",
+        "max_expansion_bytes",
+        "max_recursion",
+        "max_items",
+        "timeout_ms",
+        "max_concurrency",
+        "max_redirects",
+        "max_retries"
+      ],
+      "additionalProperties": false
+    },
+    "Endpoint": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "private_ca_ref": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "NetworkScope": {
+      "type": "object",
+      "properties": {
+        "destinations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "scheme": {
+                "enum": [
+                  "http",
+                  "https"
+                ]
+              },
+              "host": {
+                "type": "string",
+                "minLength": 1
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "allow_private_address": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "scheme",
+              "host",
+              "port"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "public_web": {
+          "type": "boolean"
+        },
+        "allow_outbound_http": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "public_web",
+        "allow_outbound_http",
+        "destinations"
+      ],
+      "additionalProperties": false
+    },
+    "DisclosureScope": {
+      "type": "object",
+      "properties": {
+        "allow_query": {
+          "type": "boolean"
+        },
+        "allow_document_content": {
+          "type": "boolean"
+        },
+        "allow_images": {
+          "type": "boolean"
+        },
+        "allow_credentials": {
+          "type": "boolean"
+        },
+        "allow_external": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "allow_query",
+        "allow_document_content",
+        "allow_images",
+        "allow_credentials",
+        "allow_external"
+      ],
+      "additionalProperties": false
+    },
+    "CredentialReference": {
+      "type": "object",
+      "properties": {
+        "secret_ref": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "network_scope": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "purpose": {
+          "enum": [
+            "search",
+            "retrieval",
+            "browser",
+            "intelligence"
+          ]
+        }
+      },
+      "required": [
+        "secret_ref",
+        "network_scope",
+        "purpose"
+      ],
+      "additionalProperties": false
+    },
+    "BrowserProfile": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "viewport": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "screen": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        },
+        "user_agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device_scale_factor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "engine",
+        "viewport"
+      ],
+      "additionalProperties": false
+    },
+    "SearchSettings": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "enum": [
+            "internal",
+            "external"
+          ]
+        },
+        "upstream_engines": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "BrowserSettings": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "controller": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "max_sessions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_sessions_per_application": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "session_lifetime_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_interactions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_pages": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_screenshot_pixels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "profile_selection": {
+          "enum": [
+            "default",
+            "randomized"
+          ]
+        },
+        "allowed_profiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "default_profile": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        }
+      },
+      "required": [
+        "engine",
+        "controller",
+        "max_sessions",
+        "session_lifetime_ms",
+        "max_interactions",
+        "max_pages",
+        "max_screenshot_pixels",
+        "profile_selection",
+        "allowed_profiles",
+        "default_profile"
+      ],
+      "additionalProperties": false
+    },
+    "IntelligenceSettings": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "vision",
+              "document_interpretation",
+              "summarization",
+              "translation",
+              "model_ocr"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "material_configuration": {
+          "type": "object",
+          "properties": {
+            "temperature": {
+              "type": "number",
+              "minimum": 0
+            },
+            "top_p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "max_output_tokens": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "model",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    },
+    "OCRSettings": {
+      "type": "object",
+      "properties": {
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "model_assisted": {
+          "type": "boolean"
+        },
+        "intelligence_provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        }
+      },
+      "required": [
+        "model_assisted"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "model_assisted": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "intelligence_provider"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "intelligence_provider"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ProviderInstance": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "enum": [
+            "search",
+            "retrieval",
+            "browser",
+            "content",
+            "ocr",
+            "intelligence"
+          ]
+        },
+        "implementation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "$ref": "#/$defs/Endpoint"
+        },
+        "credential_ref": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "network_scope": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "disclosure_scope": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "search": {
+          "$ref": "#/$defs/SearchSettings"
+        },
+        "browser": {
+          "$ref": "#/$defs/BrowserSettings"
+        },
+        "intelligence": {
+          "$ref": "#/$defs/IntelligenceSettings"
+        },
+        "ocr": {
+          "$ref": "#/$defs/OCRSettings"
+        },
+        "adapter_settings": {
+          "type": "object",
+          "description": "Validated against the approved installed adapter's closed configuration schema before initialization."
+        }
+      },
+      "required": [
+        "family",
+        "implementation",
+        "enabled",
+        "limits"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "browser"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "browser"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "browser"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "intelligence"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "intelligence"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "intelligence"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "ocr"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "ocr"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "ocr"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "search"
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "search"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "implementation": {
+                "const": "searxng"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "family": {
+                "const": "search"
+              },
+              "search": {
+                "required": [
+                  "deployment"
+                ]
+              }
+            },
+            "required": [
+              "search"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "search": {
+                      "properties": {
+                        "deployment": {
+                          "const": "external"
+                        }
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "endpoint",
+                    "network_scope",
+                    "disclosure_scope"
+                  ]
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "endpoint"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "intelligence"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "endpoint",
+              "network_scope",
+              "disclosure_scope"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "endpoint"
+            ]
+          },
+          "then": {
+            "required": [
+              "network_scope",
+              "disclosure_scope"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "credential_ref"
+            ]
+          },
+          "then": {
+            "required": [
+              "network_scope",
+              "disclosure_scope"
+            ]
+          }
+        }
+      ]
+    },
+    "Routing": {
+      "type": "object",
+      "properties": {
+        "search": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "retrieval": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "browser": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "ocr": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        },
+        "intelligence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "search",
+        "retrieval",
+        "browser",
+        "content",
+        "ocr",
+        "intelligence"
+      ],
+      "additionalProperties": false
+    },
+    "Cache": {
+      "type": "object",
+      "properties": {
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "artifact_lifetime_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "operation_lifetime_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor_lifetime_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "default_freshness_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "share_eligible_public_content": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "max_bytes",
+        "artifact_lifetime_ms",
+        "operation_lifetime_ms",
+        "cursor_lifetime_ms",
+        "default_freshness_ms",
+        "share_eligible_public_content"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "config_version": {
+      "const": "1.0"
+    },
+    "deployment_mode": {
+      "enum": [
+        "connected",
+        "restricted",
+        "internal_only",
+        "offline"
+      ]
+    },
+    "limits": {
+      "$ref": "#/$defs/RequiredLimits"
+    },
+    "providers": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/ProviderInstance"
+      }
+    },
+    "routing": {
+      "$ref": "#/$defs/Routing"
+    },
+    "network_scopes": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/NetworkScope"
+      }
+    },
+    "disclosure_scopes": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/DisclosureScope"
+      }
+    },
+    "credential_refs": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/CredentialReference"
+      }
+    },
+    "browser_profiles": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/BrowserProfile"
+      }
+    },
+    "optional_intelligence_enabled": {
+      "type": "boolean"
+    },
+    "cache": {
+      "$ref": "#/$defs/Cache"
+    }
+  },
+  "required": [
+    "config_version",
+    "deployment_mode",
+    "limits",
+    "providers",
+    "routing",
+    "network_scopes",
+    "disclosure_scopes",
+    "credential_refs",
+    "browser_profiles",
+    "optional_intelligence_enabled",
+    "cache"
+  ],
+  "additionalProperties": false
+}
