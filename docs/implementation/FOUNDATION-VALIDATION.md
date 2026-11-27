@@ -570,3 +570,28 @@ Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1035
 
 F04 is complete for review. The production built-in list is empty until the SearXNG provider (F05), which will ship the first real manifest.
 
+
+### 6.4 F05: outbound enforcement and SearXNG (in progress)
+
+SearXNG's outbound behaviour was examined on 2026-11-27 as directed. The findings and the bundled-process design are in `docs/implementation/SEARXNG-EGRESS.md`. The maintainer approved option A and decisions S1–S6, and the tracker-rule decisions T1–T5, on 2026-11-27.
+
+Connection-level outbound enforcement, used by every provider for external requests:
+
+| Component | Behaviour | Basis |
+|---|---|---|
+| `network/addresses.py` | Only globally routable unicast addresses are public. IPv6 forms carrying an IPv4 address (mapped, NAT64, 6to4, Teredo) are also judged by the embedded address. Metadata (`169.254.169.254`, `fd00:ec2::254`), unspecified, multicast and broadcast addresses are never reachable, even for a destination that allows private addresses. | AD-400, PC-022 |
+| `network/policy.py` | Applies a provider network scope. A URL must be absolute `http` or `https`, carry no user information, and match a listed `scheme://host:port` destination (host compared case-insensitively, without a trailing dot, IDNA-encoded, IP literals in canonical form) or, with `public_web`, any host. Plain `http` needs `allow_outbound_http`. Only a listed destination with `allow_private_address` may resolve to a private, loopback or link-local address. | AD-400, AD-401, PC-022 |
+| `network/backend.py` | The `httpcore2` network backend refuses a host and port the scope does not admit before resolving it. It resolves once per connection and refuses the name if any answer is prohibited. It connects to the checked address literal, not the name, and closes the connection if the peer is not that address. Unix sockets are refused. | AD-400, PC-022 |
+| `network/client.py` | `OutboundClient` follows redirects itself, re-checking each hop, with a redirect limit. HTTP method and body follow 301/302/303/307/308 semantics. A `Credential` is bound to one origin and is attached only while the request stays there; after a redirect leaves it, it is never sent again. Credential headers cannot be passed as ordinary headers. TLS verification cannot be disabled, and TLS 1.2 is the minimum; a private CA bundle may be supplied. Proxy environment variables are ignored. The body size and the total time are bounded. Failures are classified as `denied`, `unresolved`, `connect`, `tls`, `timeout`, `redirect_limit`, `too_large` or `protocol`. | AD-398, AD-400, AD-401, PC-022, PC-023 |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1108 tests; 73 in `tests/unit/network/test_outbound.py`. They run against loopback HTTP and HTTPS fixture servers and a substitutable resolver, with no external network access. Covered: hostile address classes; URL scope checks; names resolving to private, mixed or mapped addresses, which are refused without any connection; metadata addresses; single resolution per connection; proxy variables; redirects within and outside the scope, including an IP-literal redirect for an approved name and an https-to-http downgrade; redirect limits and method semantics; credential origin binding; certificate trust and name mismatch; refusing contexts with no verification or a TLS floor below 1.2; body size, timeout, and refused connections; and the backend's own refusal of unlisted targets and of a mismatched peer. Mutation checks: each of 13 weakenings was caught. They covered disabling the address check, the backend's target check, the peer check, connecting by name, per-hop URL checks, the metadata and embedded-IPv4 rules, the plain-HTTP rule, credential origin binding, credential-header refusal and the size bound.
+
+Interpretations for maintainer review (the schema defines the fields; their semantics were not otherwise specified):
+- `public_web` admits any port, not only 80 and 443. Address checks still apply.
+- A listed destination without `allow_private_address` must resolve only to public addresses. `allow_private_address` admits private, loopback and link-local addresses, but never metadata, unspecified, multicast or broadcast addresses.
+- A credential is never re-sent within a request once a redirect has left its origin, even if a later hop returns there.
+
+Limitations:
+- Disclosure scopes (`allow_query` and the rest) are enforced where requests are composed, by providers and the service core, not by this transport layer.
+- The redirect limit (5) and body limit (16 MiB) are protective defaults; providers will pass the configured limits when they are wired in.
+- HTTP/2 is not enabled for outbound requests.
