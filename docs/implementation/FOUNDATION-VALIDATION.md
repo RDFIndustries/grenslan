@@ -113,7 +113,7 @@ The companion script is a preflight test, not service implementation.
 | OpenSSL | 3.0.13 (30 Jan 2024), system and Python `ssl` module |
 | Resolver | uv 0.8.8 installed locally; PyPI lists 0.13.10 as current. Lock tooling not yet selected or pinned |
 | Docker | Docker 29.8.2 available; container and egress proof not yet executed |
-| Repository | Git repository initialized on branch `main`; baseline commit `1e704995327bbb699beb22e538e2961d24946c01`; remote `https://github.com/RDFIndustries/grenslan` (public). A Gitea mirror is requested and not yet configured |
+| Repository | Git repository initialized on branch `main`; baseline commit `1e704995327bbb699beb22e538e2961d24946c01`; remotes `origin` (`https://github.com/RDFIndustries/grenslan`, public) and `gitea` (maintainer LAN Gitea 1.25.5, `jrogers/grenslan`, served over plain HTTP) |
 
 Document placement was reconciled before the baseline commit. The adopted contract set, PRP-000 and PRP-001 were moved to the locations named in `AGENTS.md`. Superseded working revisions were moved to the ignored local `docs/archive/` directory and are not active requirements. The contract hashes in Section 3 match the files now in `docs/contracts/` exactly.
 
@@ -192,7 +192,7 @@ The local research knowledge base contains SearXNG, Crossref REST API and arXiv 
 
 | Work | Next evidence |
 |---|---|
-| Repository readiness | Complete (Section 4.1). Gitea mirror outstanding. |
+| Repository readiness | Complete (Section 4.1). |
 | Python and resolver | Establish reproducible venv and lock, verify Python/platform compatibility, actual dependency/license/security inventory. |
 | MCP SDK / ingress spike | Source inspection done (Section 4.4). Build and test the ingress gate; verify modern discovery and invocation, no outbound telemetry, then pin compatible SDK/types. |
 | TLS and identity | Actual HTTPS ASGI/MCP/REST test with private CA, auth and delegation; no plaintext bypass; certificate replacement. |
