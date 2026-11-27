@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
-CONTRACTS = Path(__file__).resolve().parents[2] / "docs" / "contracts"
+CONTRACTS = Path(__file__).resolve().parents[3] / "docs" / "contracts"
 REGISTRY: dict[str, Any] = json.loads((CONTRACTS / "TOOL_SCHEMAS.json").read_text(encoding="utf-8"))
 TOOL_NAMES = sorted(REGISTRY["tools"])
 

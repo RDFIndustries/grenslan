@@ -48,8 +48,9 @@ required-version = ">=0.13.10,<0.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests/support"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
-asyncio_mode = "strict"
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 xfail_strict = true
 
@@ -62,6 +63,9 @@ extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "PT", "SIM"]
+
+[tool.ruff.lint.isort]
+known-local-folder = ["minimal_requests"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

@@ -290,7 +290,7 @@ Findings:
 
 - `httpcore2` alone provides the needed control point through its public `network_backend` parameter. `httpx2.AsyncHTTPTransport` does not expose `network_backend`, so the discovery client should use `httpcore2` directly, or a Grenslan transport built on it, rather than `httpx2` or `httpx`. This resolves Section 4.7 in favour of not adding `httpx`.
 - `httpcore2` does not read proxy environment variables, so an environment `HTTP_PROXY` cannot silently route traffic around the policy.
-- **Open design gap:** this enforcement runs inside the Grenslan process. It cannot govern outbound traffic that SearXNG, a separately supervised process, makes to its upstream engines, which PRP-001 F05 and AD requirements on outbound destination enforcement require. Candidate designs, which need validation and maintainer review: (a) configure SearXNG's outgoing requests to use a Grenslan-operated local egress proxy that applies the same policy, combined with an operating-system or container-network rule that prevents the SearXNG process from connecting anywhere else; (b) a container network policy alone. SearXNG documents `outgoing.proxies` (https://docs.searxng.org/admin/settings/settings_outgoing.html, read 2026-11-26), with `all://` routing to HTTP, HTTPS, SOCKS4, SOCKS5 or `socks5h` proxies; with `socks5h` the proxy performs name resolution, so a Grenslan `socks5h` egress proxy could apply the same `PolicyBackend` checks. The same page shows SearXNG's outgoing client is based on `curl_cffi`. Proxy settings are cooperative, so option (a) still needs an enforced restriction on the SearXNG process's direct egress; a non-privileged way to apply one inside the primary container has not been verified.
+- **Open design gap:** this enforcement runs inside the Grenslan process. It cannot govern outbound traffic that SearXNG, a separately supervised process, makes to its upstream engines, which PRP-001 F05 and AD requirements on outbound destination enforcement require. Candidate designs, which need validation and maintainer review: (a) configure SearXNG's outgoing requests to use a Grenslan-operated local egress proxy that applies the same policy, combined with an operating-system or container-network rule that prevents the SearXNG process from connecting anywhere else; (b) a container network policy alone. SearXNG documents `outgoing.proxies` (https://docs.searxng.org/admin/settings/settings_outgoing.html, read 2026-11-26), with `all://` routing to HTTP, HTTPS, SOCKS4, SOCKS5 or `socks5h` proxies; with `socks5h` the proxy performs name resolution, so a Grenslan `socks5h` egress proxy could apply the same `PolicyBackend` checks. The same page shows SearXNG's outgoing client is based on `curl_cffi`. The maintainer directed on 2026-11-26 that SearXNG's actual outbound requests be examined first, to determine whether and how they are a problem, before an egress design is chosen. Proxy settings are cooperative, so option (a) would still need an enforced restriction on the SearXNG process's direct egress; a non-privileged way to apply one inside the primary container has not been verified.
 
 Scope: loopback fixtures and substitute resolvers only; no external network traffic, browser or worker traffic. Not F-G13 or F-G14 evidence.
 
@@ -310,7 +310,7 @@ Primary-source verification of SearXNG and the five specialized providers, perfo
 Items needing maintainer review before the dependent adapter work:
 
 1. SearXNG application server for a plain supervised process: Granian is described as the future replacement for uWSGI but is "only officially supported in the Installation container"; uWSGI remains the documented non-container path.
-2. OpenAlex `relevance_score` includes a capped citation-count boost, and `rerank=true` applies a model. Under AGENTS.md Section 2 ranking rules, the proposed handling is to preserve and label the provider's own order, never enable `rerank`, and apply no Grenslan-side popularity weighting. SearXNG engine `weight` values are likewise left at their default of 1.
+2. OpenAlex `relevance_score` includes a capped citation-count boost, and `rerank=true` applies a model. Approved by the maintainer on 2026-11-26, the handling under AGENTS.md Section 2 ranking rules is to preserve and label the provider's own order, never enable `rerank`, and apply no Grenslan-side popularity weighting. SearXNG engine `weight` values are likewise left at their default of 1.
 3. Operator-level provider identities and keys (Crossref `mailto`, NCBI `tool`/`email`/`api_key`, OpenAlex and GitHub keys) are optional configuration and never derived from consumer identity. OpenAlex without a key cannot follow cursors, and GitHub code search is unavailable without a token; both must be reported as limitations, not empty results.
 4. Whether arXiv e-prints may be cached or delivered to consumers affects later retrieval and artifact milestones; it is a licensing question outside PRP-001 discovery scope.
 
@@ -326,7 +326,7 @@ Unverified items are listed at the end of `PROVIDER-APIS.md` and remain open.
 | `mcp==2.3.0`, `mcp-types==2.3.0` | Selected for the foundation lock | Latest release on PyPI 2026-11-26; Sections 4.4–4.5. Release security advisories not yet reviewed |
 | Low-level `mcp.server.Server` behind a Grenslan modern-only ingress gate | Selected | Sections 4.4–4.5 |
 | uvicorn 0.54.0, direct TLS, minimum TLS 1.2 | Selected | Section 4.5; already a required SDK dependency |
-| Starlette (required by the SDK) for the REST route instead of adding FastAPI | **Proposed, needs maintainer review** | PRP-001 names FastAPI/ASGI as reference candidates. The foundation REST surface is one `POST /api/v1/tools/{tool_name}` route validated against the canonical registry with jsonschema; FastAPI's model-driven validation and OpenAPI generation would duplicate that and add a dependency. AGENTS.md Section 4 discourages frameworks added for anticipated features |
+| Starlette (required by the SDK) for the REST route instead of adding FastAPI | Selected; approved by maintainer 2026-11-26 | PRP-001 names FastAPI/ASGI as reference candidates. The foundation REST surface is one `POST /api/v1/tools/{tool_name}` route validated against the canonical registry with jsonschema; FastAPI's model-driven validation and OpenAPI generation would duplicate that and add a dependency. AGENTS.md Section 4 discourages frameworks added for anticipated features |
 | jsonschema 4.26.0 with the `format-nongpl` extra as the wire validator | Selected | Sections 3 and 4.11; SDK already depends on jsonschema |
 | Discovery HTTP client: `httpcore2` (already required by the SDK) with a Grenslan policy network backend; no `httpx` | Selected, pending the SearXNG egress design | Section 4.8 |
 
@@ -371,3 +371,26 @@ The local research knowledge base contains SearXNG, Crossref REST API and arXiv 
 | Container availability | Docker/WSL2 or appropriate Linux environment, nonprivileged protected endpoint proof; platform constraints remain explicit. |
 
 Complete applicable rows before the dependent code work. The approved PRP permits documentation, validation and independent work packages within scope; do not mark the preflight complete merely because initial checks pass. Full architecture acceptance status remains 0 of 120 until actual tests are executed and recorded.
+
+## 6. Implementation progress
+
+### 6.1 F02: canonical contracts and common dispatch (in progress)
+
+Implemented in `src/grenslan/contracts/` and `src/grenslan/service/`:
+
+| Component | Behaviour | Contract basis |
+|---|---|---|
+| `contracts/registry.py` | Loads the packaged registry, a byte-identical copy of `docs/contracts/TOOL_SCHEMAS.json` kept in sync by `scripts/sync-contracts.sh` and checked by a test. Projects each of the 32 tools' input and output schemas, plus `UploadResult`, into self-contained Draft 2020-12 schemas. Validates with format checking. Error reports give the JSON pointer and keyword but never the supplied value. | TC-047, TC-049 |
+| `contracts/json_input.py` | Strict body decoding. Rejects duplicate keys, `NaN`/`Infinity`, non-object bodies, invalid UTF-8, a byte-order mark, trailing data, oversized bodies (checked before parsing) and nesting deeper than 64 (checked before the recursive parser runs). | TC-047, TC-049 |
+| `contracts/envelope.py` | Typed `IssueCode`, `Status` and `Issue`. The `completed`/`partial`/`failed`/`accepted` builders enforce the envelope invariants. Tests check the enums against the schema vocabulary. | TC-005, TC-007, TC-008, TC-050 |
+| `service/profiles.py` | The basic/technical/advanced/full/custom tool profiles. Capability and operation tools are always included. A profile limits exposure and never grants authority. | TC-043, TC-054, AD-429 |
+| `service/context.py` | Trusted `InvocationContext`. The application namespace is required and no identity comes from tool arguments. | TC-048 |
+| `service/dispatch.py` | The dispatcher shared by MCP and REST. Checks run in this order: registry → authorization policy → implemented and in profile → input schema → handler semantic checks → handler. It assigns the request ID, freezes the arguments, contains handler exceptions as an `internal_error` issue that carries no detail, lets cancellation propagate, and validates every returned envelope against the tool's output schema. Tools without a handler return an explicit `unsupported_capability` failure, not a stub. | TC-005, TC-042, TC-047–050, TC-054; PRP-001 §7 |
+
+Validation on 2026-11-26 (WSL2 Linux x86-64, Python 3.12, uv 0.13.10, `uv run --locked`):
+
+- `pytest`: 465 passed (unit tests only). This covers forged context fields (`application_id`, `user_id`, `agent_id`, `instance_id`, `permissions`, `request_id`) added to an otherwise valid request for all 32 tools, conflicting selectors, format validation, non-reflection of supplied values, and failure envelopes valid for all 32 tools.
+- `ruff check`, `ruff format --check`, `mypy` (strict): clean.
+- Mutation checks. When the closed-object rule is removed from projected schemas, all 192 forged-context tests fail. Skipping the authorization check, or skipping output validation, fails the corresponding dispatcher test. Each mutation was reverted.
+
+Remaining for F02: typed request records for the enabled tools and provider configuration types, plus the safe configuration parser. The MCP and REST adapters on the dispatcher belong to F03.
