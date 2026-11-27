@@ -16,13 +16,13 @@ import httpx2
 import pytest
 import uvicorn
 import yaml
-from service_fixtures import QOR_TOKEN, ZYGOS_TOKEN, service_data, write_service_file
 
 from grenslan.config.loader import ConfigLoadError
 from grenslan.providers.registry import ImplementationRegistry, ProviderRegistrationError
 from grenslan.server.runner import run_service
 
 from fixture_providers import FixtureBehaviour, FixtureSet, fixture_config
+from service_fixtures import QOR_TOKEN, ZYGOS_TOKEN, service_data, write_service_file
 from tls_fixtures import TlsMaterial, make_tls_material
 
 pytestmark = pytest.mark.integration
