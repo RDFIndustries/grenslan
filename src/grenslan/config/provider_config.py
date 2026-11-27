@@ -60,11 +60,11 @@ class ConfigValidationError(ValueError):
         self.problems = problems
 
 
-def _freeze(value: Any) -> Any:
+def freeze_config(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+        return MappingProxyType({key: freeze_config(item) for key, item in value.items()})
     if isinstance(value, list):
-        return tuple(_freeze(item) for item in value)
+        return tuple(freeze_config(item) for item in value)
     return value
 
 
@@ -97,7 +97,7 @@ def _schema_validator() -> Draft202012Validator:
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
-def _schema_problems(validator: Draft202012Validator, instance: Any, prefix: str = "") -> list[ConfigProblem]:
+def schema_problems(validator: Draft202012Validator, instance: Any, prefix: str = "") -> list[ConfigProblem]:
     problems = []
     for error in sorted(validator.iter_errors(instance), key=lambda e: list(e.absolute_path)):
         described = describe_validation_error(error)
@@ -211,7 +211,7 @@ class _Checker:
             self.problem(location, "the implementation has no approved settings schema")
             return
         validator = Draft202012Validator(implementation.settings_schema, format_checker=FormatChecker())
-        self.problems.extend(_schema_problems(validator, settings, prefix=location))
+        self.problems.extend(schema_problems(validator, settings, prefix=location))
 
     def model_ocr(self, location: str, intelligence_id: str) -> None:
         intelligence = self.data["providers"].get(intelligence_id)
@@ -242,9 +242,9 @@ def validate_provider_config(
     data: Mapping[str, Any], implementations: Mapping[str, ImplementationSpec]
 ) -> ProviderConfig:
     """Validate configuration data or raise :class:`ConfigValidationError` listing every problem."""
-    problems = _schema_problems(_schema_validator(), data)
+    problems = schema_problems(_schema_validator(), data)
     if not problems:
         problems = _Checker(data, implementations).run()
     if problems:
         raise ConfigValidationError(problems)
-    return ProviderConfig(_freeze(dict(data)))
+    return ProviderConfig(freeze_config(dict(data)))

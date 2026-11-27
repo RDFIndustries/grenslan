@@ -30,6 +30,9 @@ dependencies = [
     "pyjwt[crypto]==2.15.1",
 ]
 
+[project.scripts]
+grenslan = "grenslan.cli:main"
+
 [project.urls]
 Source = "https://github.com/RDFIndustries/grenslan"
 

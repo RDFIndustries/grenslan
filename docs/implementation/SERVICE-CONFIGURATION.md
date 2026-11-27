@@ -1,10 +1,10 @@
 # Grenslan service configuration (ingress, authentication and diagnostics)
 
-**Status:** Draft for maintainer approval, 2026-11-27. Not yet an implementation requirement.
+**Status:** Approved by the maintainer, 2026-11-27 (decisions D1–D8). Normative for the implementation.
 **Scope:** The operator configuration that `PROVIDER_CONFIG_SCHEMA.json` deliberately excludes: TLS, listening address, ingress policy, consumer credentials, the MCP-compatible OAuth profile, tool exposure profiles and security-event limits (PROVIDER_CONTRACT.md PC-059; PRP-001 F04: "validate separate ingress/auth configuration").
 **Authority:** AD-428 (secure transport, certificate replacement), AD-429 (profiles), ARCHITECTURE.md §16.4 (validated YAML, environment overrides, protected secrets, controlled restart), TC-042–043, TC-048, TC-049; PRP-001 F03–F04 and gates F-G03–F-G05.
 
-This document proposes decisions D1–D8 (Section 9). Once approved, it becomes the normative specification, with a JSON Schema derived from Section 3, and the implementation follows it.
+Section 9 lists decisions D1–D8. The JSON Schema derived from Section 3 is `src/grenslan/config/SERVICE_CONFIG_SCHEMA.json`; a reviewed sample is `examples/service.yaml`.
 
 ## 1. Files
 
@@ -12,7 +12,7 @@ This document proposes decisions D1–D8 (Section 9). Once approved, it becomes 
 
 | File | Contents | Schema |
 |---|---|---|
-| Service configuration, default `/etc/grenslan/service.yaml` | This document. | `SERVICE_CONFIG_SCHEMA.json` (to be derived from Section 3 on approval) |
+| Service configuration, default `/etc/grenslan/service.yaml` | This document. | `src/grenslan/config/SERVICE_CONFIG_SCHEMA.json` |
 | Provider configuration, default `/etc/grenslan/providers.yaml` | Providers, routing, scopes, limits and cache. | The adopted `PROVIDER_CONFIG_SCHEMA.json`, unchanged |
 
 The adopted provider schema rejects unknown top-level keys. Keeping service settings in their own file avoids amending an adopted contract. It also keeps consumer credentials apart from provider credentials, which have a different purpose, scope and audience.
@@ -132,7 +132,8 @@ The alternative is a `secret_ref` to a file holding the raw token, as the illust
 
 - **If valid:** credentials and OAuth issuers (including re-read keys) are replaced atomically. In-flight work whose credential, issuer or key was removed or changed is cancelled; all other work continues. This is the revocation path F03 and F-G05 require without a restart.
 - **If invalid:** nothing changes, and the problems are logged as on startup.
-- **Changes needing a restart:** `listen`, `tls`, `ingress`, `tools`, `security_events`, adding or removing the `oauth` section, and `oauth.resource`. These are reported in the log and not applied.
+- **Changes needing a restart:** `listen`, `tls`, `ingress`, `tools`, `security_events`, adding the `oauth` section, and `oauth.resource`, `oauth.leeway_seconds` and `oauth.max_token_lifetime_seconds`. These are reported in the log and not applied.
+- **Removing the `oauth` section** removes every issuer, so all access tokens are revoked at once. The metadata document is withdrawn at the next restart.
 
 A controlled restart also applies everything. The provider file is not reloaded by `SIGHUP`; provider changes need a restart (PC-056: "Reconfiguration and controlled restart are sufficient").
 
@@ -173,7 +174,7 @@ Rules:
 - **Invalid configuration** of any kind stops startup before the port is bound. Examples: an unknown implementation, a schema violation, or a declaration that does not match the implementation's methods.
 - **A provider that fails to initialize** or later becomes unhealthy does not stop startup. Its state becomes `unavailable` or `degraded`. Every capability it alone serves is reported `unavailable` by `capabilities_get`, and requests needing that capability fail with an explicit issue. This is the explicit required-failure reporting of PC-056, and it keeps unrelated capabilities working.
 
-## 9. Decisions requested
+## 9. Decisions
 
 | ID | Proposal | Main alternative |
 |---|---|---|

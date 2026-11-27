@@ -1,0 +1,63 @@
+# Grenslan service configuration sample (docs/implementation/SERVICE-CONFIGURATION.md).
+# Every value is a starting point to review for your deployment; none is a default.
+# Validate with: GRENSLAN_SERVICE_CONFIG=/path/to/service.yaml grenslan check-config
+config_version: "1.0"
+
+listen:
+  host: 0.0.0.0            # inside the container; publish the port only where intended
+  port: 8443
+
+tls:
+  certificate_file: /run/secrets/grenslan_tls_cert.pem
+  private_key_file: /run/secrets/grenslan_tls_key.pem
+
+ingress:
+  allowed_hosts: [grenslan, localhost]
+  allowed_origins: []      # browser page origins allowed to call Grenslan, for example https://zygos.lan
+  max_request_bytes: 1048576
+  argument_limits:
+    max_string_chars: 65536
+    max_array_items: 1000
+    max_depth: 32
+
+tools:
+  profile: full            # basic | technical | advanced | full | a custom profile name
+  custom_profiles:
+    search_only: [web_search, image_search]
+
+# One entry per consumer. Run "grenslan credential new" for each, give the
+# printed token to the consumer, and replace the placeholder digest with the
+# printed token_sha256. No token matches the placeholders below.
+credentials:
+  qor:
+    application_id: qor
+    token_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    permissions: [web_search, image_search, capabilities_get]
+    delegation: true
+  zygos:
+    application_id: zygos
+    token_sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+    permissions: [web_search, image_search, capabilities_get]
+    delegation: false
+    profile: search_only
+    identity:
+      user_id: zygos-owner
+
+# Optional: accept OAuth access tokens from a trusted issuer. Remove the section
+# to accept only the credentials above.
+oauth:
+  resource: https://grenslan:8443/mcp
+  leeway_seconds: 30
+  max_token_lifetime_seconds: 3600
+  issuers:
+    qor_oidc:
+      issuer: https://qor.lan/
+      application_id: qor
+      jwks_file: /etc/grenslan/keys/qor-jwks.json
+      scopes:
+        grenslan.search: [web_search, image_search]
+      user_claim: sub
+
+security_events:
+  max_events_per_window: 100
+  window_seconds: 60

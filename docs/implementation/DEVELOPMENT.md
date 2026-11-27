@@ -37,14 +37,26 @@ Tests marked `integration` start a real Uvicorn server over HTTPS on a loopback 
 
 Ruff and mypy cover `src/` and `tests/`. `docs/` is excluded from linting because it holds the adopted declaration file `docs/contracts/PROVIDER_INTERFACES.py` and disposable preflight scripts, which are not package code.
 
+## Running the service
+
+```sh
+uv run grenslan credential new          # a consumer token and its token_sha256
+GRENSLAN_SERVICE_CONFIG=examples/service.yaml GRENSLAN_PROVIDER_CONFIG=path/to/providers.yaml \
+  uv run grenslan check-config
+uv run grenslan serve                    # same environment; SIGHUP reloads credentials and issuers
+```
+
+The configuration is specified in `SERVICE-CONFIGURATION.md`.
+
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/grenslan/` | The `grenslan` package. Components are added as their work packages are implemented; there are no placeholder modules. |
 | `tests/unit/` | Unit tests, grouped by package area. `contracts/test_adopted_contract_files.py` checks the integrity of the adopted contract files. |
-| `tests/integration/` | Tests against a running HTTPS server (`ingress/` covers REST and MCP). |
-| `tests/support/` | Shared, sanitized test fixtures (`minimal_requests.py`, `config_fixtures.py`, `tls_fixtures.py` for a throwaway CA and server certificate, `ingress_fixtures.py` for a running server with test credentials, `jwt_fixtures.py` for throwaway signing keys and access tokens, `fixture_providers.py` for a controllable fixture search provider registered only by tests), importable from any test. |
+| `tests/integration/` | Tests against a running HTTPS server (`ingress/` covers REST and MCP; `service/` runs the configured service, including `SIGHUP` reload). |
+| `examples/` | Reviewed configuration samples; tests validate them. |
+| `tests/support/` | Shared, sanitized test fixtures (`minimal_requests.py`, `config_fixtures.py`, `tls_fixtures.py` for a throwaway CA and server certificate, `ingress_fixtures.py` for a running server with test credentials, `jwt_fixtures.py` for throwaway signing keys and access tokens, `fixture_providers.py` for a controllable fixture search provider registered only by tests, `service_fixtures.py` for service configurations with throwaway consumer tokens), importable from any test. |
 | `scripts/` | `check.sh` (all checks) and `sync-contracts.sh` (copies the adopted tool registry and provider configuration schema into the package). |
 | `docs/contracts/` | Authoritative adopted contracts and schemas. Runtime code reads or derives from these. The one packaged copy, `src/grenslan/contracts/TOOL_SCHEMAS.json`, must stay byte-identical; a test fails if it diverges, and `scripts/sync-contracts.sh` refreshes it. |
 | `docs/implementation/` | Validation record, dependency inventory, this file, and reproducible preflight scripts under `preflight/`. |

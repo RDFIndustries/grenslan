@@ -502,20 +502,38 @@ Limitations carried forward:
 
 ### 6.3 F04: configuration and provider registry (in progress)
 
-Service configuration specification: drafted as `docs/implementation/SERVICE-CONFIGURATION.md` (decisions D1–D8), awaiting maintainer approval. Its implementation (service file loading, environment overrides, `SIGHUP` credential reload and commands) waits for that approval.
+Service configuration specification: `docs/implementation/SERVICE-CONFIGURATION.md`, decisions D1–D8 approved by the maintainer on 2026-11-27. Two clarifications were recorded while implementing it, both within D3: `oauth.leeway_seconds` and `oauth.max_token_lifetime_seconds` need a restart (they are not issuers); removing the `oauth` section revokes every access token immediately.
 
-Implemented in `src/grenslan/providers/` (independent of the pending decisions):
+Provider registry and lifecycle:
 
 | Component | Behaviour | Contract basis |
 |---|---|---|
 | `providers/registry.py` | Implementations are registered explicitly in code by implementation ID and family. There is no package discovery and no loading by name from configuration. Configuration validation can select only registered implementations. Creating an instance checks its self-description against the registration: implementation ID, family, contract version 1.0, at least one capability, each capability unique and in the family, and a callable method for every lifecycle step and declared capability (`close_session` also for browsers). A mismatch, or a factory or `describe` failure, stops startup with a `ProviderRegistrationError` that names the provider but not the exception text. | PC-002, PC-004, PC-056 |
-| `providers/runtime.py` | Disabled instances are never created and stay `disabled`. Enabled instances initialize concurrently, each within the lower of the global and instance `timeout_ms`, passing a `LifecycleContext` with that deadline and a cancellation signal. A failed result, an exception, an overrun or an invalid reported state makes that instance `unavailable` with a `provider_unavailable`, `internal_error` or `timeout` issue, without affecting the others or startup. Health refresh moves instances between `ready`, `degraded` and `unavailable` under the same deadline. Shutdown stops every created instance within its deadline and leaves it `stopped`, whatever it does. Eligibility for a capability follows the configured route order, keeping only `ready` or `degraded` instances that declare it; nothing is substituted when none qualifies. Provider exception text is never logged or reported. | PC-006, PC-010, PC-056; D8 (proposed) |
+| `providers/runtime.py` | Disabled instances are never created and stay `disabled`. Enabled instances initialize concurrently, each within the lower of the global and instance `timeout_ms`, passing a `LifecycleContext` with that deadline and a cancellation signal. A failed result, an exception, an overrun or an invalid reported state makes that instance `unavailable` with a `provider_unavailable`, `internal_error` or `timeout` issue, without affecting the others or startup. Health refresh moves instances between `ready`, `degraded` and `unavailable` under the same deadline. Shutdown stops every created instance within its deadline and leaves it `stopped`, whatever it does. Eligibility for a capability follows the configured route order, keeping only `ready` or `degraded` instances that declare it; nothing is substituted when none qualifies. Provider exception text is never logged or reported. | PC-006, PC-010, PC-056; D8 |
 | `tests/support/fixture_providers.py` | A controlled fixture search provider and configuration, registered only by tests through the same registry, so production cannot return test data or default to it. | PRP-001 F04 |
 
 Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 879 tests; 26 cover registration and lifecycle. Mutation checks: skipping the method check, the family check or the state filter on eligibility, creating disabled instances, or removing the lifecycle deadline each fails the tests. Each mutation was reverted. Tests involving hung providers have an outer bound, so a missing deadline fails rather than hangs.
 
+Service configuration and commands:
+
+| Component | Behaviour | Basis |
+|---|---|---|
+| `config/SERVICE_CONFIG_SCHEMA.json`, `config/service_config.py` | The service file is read with the restricted YAML loader, then checked against the schema (closed objects, no numeric defaults) and, if that passes, by cross-field checks reported together: listen host, allowed hosts (no port) and exact browser origins (no path, credentials or default port), all lowercased; permissions and scopes name registered tools; token digests unique; profiles exist, and custom profiles neither shadow built-in names nor list unknown tools; the OAuth resource is an `https` URL without query or fragment whose host is allowed; issuer values are `https` and unique. Problems give a location and reason, never the value. | D1, D2, AD-429, TC-043, TC-048, TC-049 |
+| Environment overrides | Only the D5 allowlist applies, to a copy of the parsed file, before the same validation. A malformed value or any other `GRENSLAN_*` variable is a problem naming the variable, never its value. | D5 |
+| `server/deployment.py` | Builds credentials (a credential profile narrows permissions and never adds to them), issuers from local JWKS files (strict JSON: no duplicate members or non-finite numbers; public RS256 or ES256 keys only), the authenticator, ingress settings, argument limits, the exposure profile and the security log. `AccessReloader` re-reads the service and key-set files: if everything is valid, credentials and issuers are replaced and only work whose grant was removed or changed is cancelled; otherwise nothing changes and the problems are logged. Restart-only changes are logged and not applied. | D3, D4, F-G05 |
+| `server/runner.py` | Validates both files, the TLS pair, the key sets and every provider declaration before binding the port; starts providers, serves HTTPS with forwarded headers ignored and no `Server` header, reloads on `SIGHUP` on the event loop, and shuts providers down on exit. | D6, D7, D8, AD-428 |
+| `cli.py`, `grenslan` entry point | `check-config` (exit 1 with every problem), `serve`, and `credential new` (32 random bytes, URL-safe, printed once with its `token_sha256`). | D2, D6 |
+| `providers/builtin.py` | The production implementation list. It is empty until the SearXNG provider (F05), so the production service accepts only a provider configuration without instances. | PC-004 |
+| `examples/service.yaml` | Reviewed sample. Its digests are placeholders that no token matches; a test validates it. | Section 2 |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 963 tests: 47 cover service configuration and overrides, 21 deployment and reload, 7 the commands, and 6 integration tests run the configured service over HTTPS. Those 6 cover authentication, a real `SIGHUP` revoking one credential while another keeps working, startup stopped before binding by invalid configuration, an unknown variable or a provider declaration mismatch, and a failed provider not stopping startup and still being shut down. Mutation checks: removing profile narrowing, the credential replacement on reload, strict key-set parsing, the unknown-variable check, the resource-host check, digest uniqueness, the default-port origin check or the profile-shadowing check each fails the tests. One mutation survived because a condition in the reload was redundant; it was removed. Each mutation was reverted.
+
+Limitations:
+- The production service has no tool handlers yet: permitted tools return `unsupported_capability` until `capabilities_get` (below) and search (F05, F06) are wired in.
+- Provider health is refreshed only on demand. The configuration defines no refresh interval, and none is invented.
+- Reload reads small, size-bounded files on the event loop.
+
 Remaining for F04:
-- After approval of the specification: service configuration loading and validation, environment overrides, `SIGHUP` reload, `check-config`, `serve` and `credential new`, and a validated configuration sample.
 - Effective capability projection for `capabilities_get`, and safe profile discovery.
 - Extension documentation for operator-installed implementations.
 

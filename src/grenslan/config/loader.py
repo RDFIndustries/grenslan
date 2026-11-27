@@ -1,10 +1,11 @@
-"""Load and validate the operator's provider configuration file."""
+"""Read operator configuration files and validate the provider configuration."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from grenslan.config.provider_config import (
     ConfigValidationError,
@@ -38,13 +39,8 @@ def _fail(message: str) -> ConfigLoadError:
     return ConfigLoadError([LoadProblem("file", message)])
 
 
-def load_provider_config_file(
-    path: Path,
-    implementations: Mapping[str, ImplementationSpec],
-    *,
-    max_bytes: int = DEFAULT_MAX_CONFIG_BYTES,
-) -> ProviderConfig:
-    """Read, parse and validate ``path``; every failure is a :class:`ConfigLoadError`."""
+def read_config_data(path: Path, *, max_bytes: int = DEFAULT_MAX_CONFIG_BYTES) -> dict[str, Any]:
+    """Read and parse ``path`` as restricted YAML; every failure is a :class:`ConfigLoadError`."""
     try:
         with path.open("rb") as handle:
             raw = handle.read(max_bytes + 1)
@@ -57,9 +53,19 @@ def load_provider_config_file(
     except UnicodeDecodeError:
         raise _fail("configuration is not valid utf-8") from None
     try:
-        data = load_config_text(text, max_bytes=max_bytes)
+        return load_config_text(text, max_bytes=max_bytes)
     except ConfigSyntaxError as exc:
         raise ConfigLoadError([LoadProblem(f"line {exc.line}", exc.reason)]) from None
+
+
+def load_provider_config_file(
+    path: Path,
+    implementations: Mapping[str, ImplementationSpec],
+    *,
+    max_bytes: int = DEFAULT_MAX_CONFIG_BYTES,
+) -> ProviderConfig:
+    """Read, parse and validate ``path``; every failure is a :class:`ConfigLoadError`."""
+    data = read_config_data(path, max_bytes=max_bytes)
     try:
         return validate_provider_config(data, implementations)
     except ConfigValidationError as exc:
