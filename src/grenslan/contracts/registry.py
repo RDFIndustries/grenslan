@@ -63,7 +63,7 @@ def _pointer(path: Iterator[Any] | Any) -> str:
     return "/" + "/".join(parts) if parts else ""
 
 
-def _describe(error: ValidationError) -> SchemaError:
+def describe_validation_error(error: ValidationError) -> SchemaError:
     location = _pointer(error.absolute_path)
     keyword = str(error.validator)
     if keyword == "additionalProperties":
@@ -148,7 +148,7 @@ class ToolRegistry:
 
     def _errors(self, key: str, instance: Any) -> list[SchemaError]:
         errors = sorted(self._validators[key].iter_errors(instance), key=lambda e: list(e.absolute_path))
-        return [_describe(error) for error in errors[:_MAX_REPORTED_ERRORS]]
+        return [describe_validation_error(error) for error in errors[:_MAX_REPORTED_ERRORS]]
 
     def input_errors(self, tool: str, arguments: Any) -> list[SchemaError]:
         self._record(tool)

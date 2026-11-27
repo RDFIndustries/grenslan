@@ -25,6 +25,7 @@ dependencies = [
     "anyio==4.16.0",
     # format-nongpl avoids the GPL-licensed rfc3987 pulled in by the "format" extra.
     "jsonschema[format-nongpl]==4.26.0",
+    "pyyaml==6.0.4",
 ]
 
 [project.urls]
@@ -37,6 +38,7 @@ dev = [
     "ruff==0.17.6",
     "mypy==2.4.1",
     "types-jsonschema==4.26.0.20261006",
+    "types-pyyaml==6.0.12.20261122",
 ]
 
 [build-system]
@@ -65,7 +67,7 @@ extend-exclude = ["docs"]
 select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "PT", "SIM"]
 
 [tool.ruff.lint.isort]
-known-local-folder = ["minimal_requests"]
+known-local-folder = ["minimal_requests", "config_fixtures"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

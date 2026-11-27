@@ -393,4 +393,37 @@ Validation on 2026-11-26 (WSL2 Linux x86-64, Python 3.12, uv 0.13.10, `uv run --
 - `ruff check`, `ruff format --check`, `mypy` (strict): clean.
 - Mutation checks. When the closed-object rule is removed from projected schemas, all 192 forged-context tests fail. Skipping the authorization check, or skipping output validation, fails the corresponding dispatcher test. Each mutation was reverted.
 
-Remaining for F02: typed request records for the enabled tools and provider configuration types, plus the safe configuration parser. The MCP and REST adapters on the dispatcher belong to F03.
+Provider configuration, added in `src/grenslan/config/`:
+
+| Component | Behaviour | Contract basis |
+|---|---|---|
+| `config/yaml_loader.py` | PyYAML 6.0.4 safe loader, restricted to plain data. Rejects duplicate keys, every explicit tag (executable `!!python/*`, custom, `!!binary`, `!!set`, `!!str`), anchors, aliases, merge keys, unquoted timestamps, non-finite floats, non-string keys, a non-mapping root, multiple documents, oversized text and nesting deeper than 32. Structure is checked on the parser event stream before composition, so deep nesting cannot exhaust the stack. Errors give the line number but no content, including no source snippet. | PC-059; F-G15 (YAML portion) |
+| `config/provider_config.py` | Validates against the packaged byte-identical copy of `PROVIDER_CONFIG_SCHEMA.json`, then runs the cross-field checks listed below and reports every problem together. Returns an immutable `ProviderConfig`. `routes(family)` gives the executable route order: enabled instances only, and no intelligence route while `optional_intelligence_enabled` is false. | PC-059, PC-060 |
+| `config/loader.py` | Reads the file with a size bound, decodes strict UTF-8, then parses and validates. Every failure is a `ConfigLoadError` carrying a line or JSON-pointer location. | PC-059 |
+
+Cross-field checks implemented:
+- implementation IDs resolve in an explicit `ImplementationSpec` registry with a matching family;
+- route entries exist and their family matches the route;
+- network, disclosure and credential scope references exist;
+- a credential's purpose matches the provider family, and its network scope matches the provider's;
+- every enabled search, retrieval, browser or intelligence provider (including internal SearXNG) has network and disclosure scopes;
+- `offline` and `internal_only` modes reject public-web scopes on enabled providers;
+- endpoints carry no user information and no credential-like query parameters, match an approved scheme, host and port destination of their scope, and use plain HTTP only where the scope sets `allow_outbound_http`;
+- provider limit overrides do not exceed global limits;
+- `adapter_settings` is rejected unless the implementation has an approved closed settings schema, and is validated against it;
+- model-assisted OCR references an existing, enabled intelligence provider that declares `model_ocr`, with the master switch on;
+- a browser's default profile is in `allowed_profiles`, and each allowed profile exists and uses the provider's engine.
+
+Validation on 2026-11-26 (same environment): `scripts/check.sh` passed, with 538 unit tests. Mutation checks: disabling the limit-override check, the endpoint-destination check or the isolated-mode check each fails its tests, and each mutation was reverted.
+
+Interpretations recorded for maintainer review:
+- (a) Credential-like query parameters are detected by name, using the markers key, token, secret, password, passwd, auth, signature, sig and credential. Any query parameter whose name contains one of these is rejected.
+- (b) An enabled intelligence provider while `optional_intelligence_enabled` is false is not a configuration error. It simply never executes.
+- (c) In `offline` and `internal_only` modes, destinations are not yet checked statically for private addresses. Runtime egress enforcement (Section 4.8) remains authoritative.
+
+Remaining for F02:
+- typed request records for the enabled tools;
+- documented environment overrides validated through the same path (PC-059);
+- the separate ingress and authentication settings schema (PRP-001 §6).
+
+The MCP and REST adapters on the dispatcher belong to F03.

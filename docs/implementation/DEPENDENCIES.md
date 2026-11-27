@@ -1,6 +1,6 @@
 # Grenslan dependency inventory
 
-Generated 2026-11-26 from the installed metadata of a `uv sync --locked` environment (Python 3.12.3, Linux x86_64) at the commit that introduced `uv.lock`. Licences are as declared in each package's metadata (`License-Expression`, else trove classifiers). Declared metadata is a starting point for licence review, not a substitute for it.
+Generated 2026-11-26 from the installed metadata of a `uv sync --locked` environment (Python 3.12.3, Linux x86_64) at the commit that introduced `uv.lock`, and updated when a dependency changes. Licences are as declared in each package's metadata (`License-Expression`, else trove classifiers). Declared metadata is a starting point for licence review, not a substitute for it.
 
 Runtime packages are those `uv export --no-dev` includes. Dev packages are needed only for linting, type checking and tests and are not distributed with the service.
 
@@ -32,6 +32,7 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 | pyjwt | 2.15.1 | MIT | runtime | transitive |
 | python-dateutil | 4.0.0 | BSD-3-Clause | runtime | transitive |
 | python-multipart | 0.0.34 | Apache-2.0 | runtime | transitive |
+| pyyaml | 6.0.4 | MIT | runtime | direct |
 | referencing | 0.37.0 | MIT | runtime | transitive |
 | rfc3339-validator | 0.1.4 | MIT License | runtime | transitive |
 | rfc3986-validator | 0.1.1 | MIT License | runtime | transitive |
@@ -60,6 +61,7 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 | pytest-asyncio | 1.5.0 | Apache-2.0 | dev | direct |
 | ruff | 0.17.6 | MIT | dev | direct |
 | types-jsonschema | 4.26.0.20261006 | Apache-2.0 | dev | direct |
+| types-pyyaml | 6.0.12.20261122 | Apache-2.0 | dev | direct |
 
 ## Licence review notes
 
@@ -67,5 +69,6 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 - `fqdn` (runtime, via `jsonschema[format-nongpl]`) and `pathspec` (dev only, via `mypy`) are MPL-2.0, a file-level copyleft licence. Distributing unmodified MPL-2.0 files alongside Apache-2.0 code is permitted; modified MPL-2.0 files must remain available under MPL-2.0. Neither file is modified.
 - `cryptography` is dual-licensed Apache-2.0 OR BSD-3-Clause, and `packaging` Apache-2.0 OR BSD-2-Clause.
 - `typing_extensions` is PSF-2.0.
+- `pyyaml` (added for the operator configuration loader, PC-059) has no dependencies and ships CPython 3.12 manylinux wheels for x86_64 and aarch64. Only its safe loader is used, behind `grenslan.config.yaml_loader`, which additionally rejects duplicate keys, every explicit tag, anchors, aliases and merge keys.
 - SearXNG (AGPL-3.0) is not a Python dependency of this package. Its distribution and corresponding-source obligations are tracked separately in the validation record.
 - Not yet reviewed: licence texts and notice files that must ship in the container, and security advisories for each pinned version.
