@@ -104,11 +104,30 @@ def test_host_names_are_compared_case_insensitively_without_trailing_dot() -> No
     assert policy.check_url("https://API.Example.Test./search").host == "api.example.test"
 
 
-def test_public_web_admits_any_public_host_but_not_plain_http_unless_allowed() -> None:
-    assert scope(public_web=True).check_url("https://anything.test:8443/").port == 8443
+def test_public_web_admits_any_public_host_on_the_standard_https_port() -> None:
+    assert scope(public_web=True).check_url("https://anything.test/").port == 443
+    assert scope(public_web=True).check_url("https://anything.test:443/").port == 443
+
+
+@pytest.mark.parametrize(
+    "url", ["https://anything.test:8443/", "https://anything.test:80/", "https://anything.test:22/"]
+)
+def test_public_web_does_not_admit_other_https_ports(url: str) -> None:
+    with pytest.raises(DestinationDenied, match="not an approved destination"):
+        scope(public_web=True, allow_outbound_http=True).check_url(url)
+
+
+def test_public_web_admits_plain_http_only_on_port_80_and_only_when_allowed() -> None:
     with pytest.raises(DestinationDenied, match="plain http"):
         scope(public_web=True).check_url("http://anything.test/")
     assert scope(public_web=True, allow_outbound_http=True).check_url("http://anything.test/").port == 80
+    with pytest.raises(DestinationDenied, match="not an approved destination"):
+        scope(public_web=True, allow_outbound_http=True).check_url("http://anything.test:8080/")
+
+
+def test_a_listed_destination_may_use_another_port_alongside_public_web() -> None:
+    policy = scope(dest("api.example.test", 8443, "https", private=False), public_web=True)
+    assert policy.check_url("https://api.example.test:8443/").port == 8443
 
 
 # Connection-level enforcement
@@ -141,12 +160,26 @@ async def test_names_resolving_to_private_addresses_are_denied_without_connectin
     assert server.routes.seen == []
 
 
-async def test_public_web_does_not_reach_private_addresses(server: FixtureServer) -> None:
+async def test_public_web_does_not_reach_private_addresses() -> None:
     resolver = StaticResolver({"rebound.test": LOOPBACK})
-    async with client(scope(public_web=True, allow_outbound_http=True), resolver) as outbound:
-        with pytest.raises(DestinationDenied, match="prohibited address"):
-            await outbound.request("GET", f"http://rebound.test:{server.port}/", timeout=5)
-    assert server.routes.seen == []
+    backend = PolicyBackend(scope(public_web=True), resolver)
+    with pytest.raises(DestinationDenied, match="prohibited address"):
+        await backend.connect_tcp("rebound.test", 443)
+
+
+@pytest.mark.parametrize(("port", "allow_outbound_http"), [(8443, True), (80, False)])
+async def test_the_backend_admits_public_web_only_on_standard_ports(port: int, allow_outbound_http: bool) -> None:
+    resolver = StaticResolver({"anything.test": ["93.184.215.14"]})
+    backend = PolicyBackend(scope(public_web=True, allow_outbound_http=allow_outbound_http), resolver)
+    backend._inner = _NeverConnect()  # type: ignore[assignment]
+    with pytest.raises(DestinationDenied, match="not an approved destination"):
+        await backend.connect_tcp("anything.test", port)
+    assert resolver.lookups == []
+
+
+class _NeverConnect:
+    async def connect_tcp(self, *args: Any) -> None:
+        raise AssertionError("a connection was attempted")
 
 
 async def test_metadata_addresses_are_denied_even_for_private_destinations() -> None:

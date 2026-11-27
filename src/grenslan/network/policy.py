@@ -1,8 +1,10 @@
 """A provider's network scope, applied to URLs and to connection targets.
 
 A scope (``network_scopes`` in the provider configuration) lists approved
-``scheme://host:port`` destinations and may admit the public web. Plain HTTP
-needs ``allow_outbound_http``. A listed destination with
+``scheme://host:port`` destinations and may admit the public web, which means
+any host on the standard port only: 443 for https, and 80 for plain http.
+Any other port must be a listed destination. Plain HTTP needs
+``allow_outbound_http``. A listed destination with
 ``allow_private_address`` may resolve to private, loopback or link-local
 addresses; every other destination must resolve only to public addresses.
 Metadata, unspecified, multicast and broadcast addresses are never reachable.
@@ -98,7 +100,7 @@ class NetworkPolicy:
         listed = [private for (s, h, p, private) in self.destinations if (s, h, p) == (scheme, host, port)]
         if listed:
             return Target(scheme, host, port, any(listed))
-        if self.public_web:
+        if self.public_web and port == DEFAULT_PORTS[scheme]:
             return Target(scheme, host, port, False)
         raise DestinationDenied(f"{scheme}://{host}:{port} is not an approved destination")
 
@@ -110,9 +112,14 @@ class NetworkPolicy:
         """
         host = normalize_host(host)
         listed = [private for (_, h, p, private) in self.destinations if (h, p) == (host, port)]
-        if not listed and not self.public_web:
+        if not listed and not self._public_web_port(port):
             raise DestinationDenied(f"{host}:{port} is not an approved destination")
         return any(listed)
+
+    def _public_web_port(self, port: int) -> bool:
+        return self.public_web and (
+            port == DEFAULT_PORTS["https"] or (self.allow_outbound_http and port == DEFAULT_PORTS["http"])
+        )
 
     @staticmethod
     def address_allowed(address: IPAddress, *, allow_private: bool) -> bool:
