@@ -1,6 +1,6 @@
 # Bundled SearXNG: outbound enforcement and process design
 
-**Status:** Draft for maintainer approval, 2026-11-27. Not yet an implementation requirement.
+**Status:** Option A and decisions S1–S4 and S6 approved by the maintainer, 2026-11-27. S5 and tracker-URL removal (Section 4) are open.
 **Scope:** How the bundled SearXNG process is confined so that its outbound traffic obeys Grenslan's destination and disclosure policy, and how Grenslan configures and reaches it.
 **Authority:** AD-423 (single primary container bundling SearXNG as a separately managed internal process; endpoint not exposed; no separate container mandatory), AD-370, the deployment decision requiring nonprivileged operation and no host socket, the configuration decision requiring that outbound SearXNG queries comply with provider and disclosure policy, AGENTS.md §4–5 (no runtime downloads; outbound restrictions enforced independently of the component); PRP-001 F05, gates F-G13, F-G14, F-G17.
 
@@ -35,7 +35,7 @@ Consequence: configuration alone can make SearXNG well-behaved, but cannot enfor
 
 **C. Cooperative only:** the allowlisted configuration plus the proxy, with no operating-system enforcement. This does not meet the requirement to enforce outbound restrictions independently of the component. Not recommended, except as an explicit, documented, operator-chosen degraded mode, if one is wanted at all.
 
-## 3. Decisions requested
+## 3. Decisions
 
 | ID | Proposal |
 |---|---|
@@ -47,3 +47,9 @@ Consequence: configuration alone can make SearXNG well-behaved, but cannot enfor
 | S6 | The pinned SearXNG build is recorded by image digest and commit, and the corresponding source is available as AD-423 and the AGPL require. The exact packaging route is settled with the container work. |
 
 Implementation can start now, before these decisions, on the parts every option needs: the in-process connection-level enforcement (from the egress spike), the egress proxy, and the SearXNG search adapter against a fixture server.
+
+## 4. Open items
+
+- **Tracker-URL removal.** The maintainer wants tracker removal kept, as an exception to S3's empty plugin list. SearXNG's plugin downloads the ClearURLs rules at each start, which AGENTS.md §4 rules out and which fails in restricted deployments. The candidate approaches are: a pinned copy of the rules bundled in the image, applied by the plugin through SearXNG's cache or applied by Grenslan to search results; or an approved download through the egress proxy. The ClearURLs rules licence must be verified before the rules are bundled.
+- **S5 (external instance).** The maintainer asked why an external instance would be used; see the reply recorded with the decision.
+
