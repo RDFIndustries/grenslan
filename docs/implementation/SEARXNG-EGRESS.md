@@ -1,6 +1,6 @@
 # Bundled SearXNG: outbound enforcement and process design
 
-**Status:** Option A and decisions S1–S4 and S6 approved by the maintainer, 2026-11-27. S5 and tracker-URL removal (Section 4) are open.
+**Status:** Option A and decisions S1–S6 approved by the maintainer, 2026-11-27 (S5: keep the external instance as an operator option). Tracker-URL removal (Section 4) is proposed and open.
 **Scope:** How the bundled SearXNG process is confined so that its outbound traffic obeys Grenslan's destination and disclosure policy, and how Grenslan configures and reaches it.
 **Authority:** AD-423 (single primary container bundling SearXNG as a separately managed internal process; endpoint not exposed; no separate container mandatory), AD-370, the deployment decision requiring nonprivileged operation and no host socket, the configuration decision requiring that outbound SearXNG queries comply with provider and disclosure policy, AGENTS.md §4–5 (no runtime downloads; outbound restrictions enforced independently of the component); PRP-001 F05, gates F-G13, F-G14, F-G17.
 
@@ -48,8 +48,14 @@ Consequence: configuration alone can make SearXNG well-behaved, but cannot enfor
 
 Implementation can start now, before these decisions, on the parts every option needs: the in-process connection-level enforcement (from the egress spike), the egress proxy, and the SearXNG search adapter against a fixture server.
 
-## 4. Open items
+## 4. Tracker-URL removal (proposed, decisions T1–T5)
 
-- **Tracker-URL removal.** The maintainer wants tracker removal kept, as an exception to S3's empty plugin list. SearXNG's plugin downloads the ClearURLs rules at each start, which AGENTS.md §4 rules out and which fails in restricted deployments. The candidate approaches are: a pinned copy of the rules bundled in the image, applied by the plugin through SearXNG's cache or applied by Grenslan to search results; or an approved download through the egress proxy. The ClearURLs rules licence must be verified before the rules are bundled.
-- **S5 (external instance).** The maintainer asked why an external instance would be used; see the reply recorded with the decision.
+The maintainer wants tracker removal kept, with bundled rules. SearXNG's plugin instead downloads the ClearURLs rules at every start, which AGENTS.md §4 rules out and which fails in restricted deployments. The rules change every one to two weeks, so shipping them and updating them are separated:
 
+| ID | Proposal |
+|---|---|
+| T1 | The image ships a pinned copy of the ClearURLs rules, recorded with source URL, commit, SHA-256 and licence notice. This is subject to verifying the rules' licence. |
+| T2 | An optional service setting, `tracker_rules_file`, names an operator-maintained rules file that replaces the bundled copy. It is validated like the key-set files: strict JSON, bounded size, expected structure, every pattern compiled and bounded. |
+| T3 | `grenslan tracker-rules update --output FILE`, run by the operator, fetches the current rules, validates them and replaces the file atomically. The operator schedules it (every one to two weeks). Restricted sites run it on a connected machine and copy the file. Grenslan never fetches the rules by itself. |
+| T4 | `SIGHUP` reloads the rules. An invalid file changes nothing. |
+| T5 | Grenslan applies the rules to search results from every provider; SearXNG's plugin list stays empty (S3). How a cleaned URL is represented in results, and whether the original is retained, is settled against the Tool Contract in F06. |
