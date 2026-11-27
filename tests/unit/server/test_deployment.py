@@ -8,14 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from service_fixtures import (
-    QOR_TOKEN,
-    ZYGOS_TOKEN,
-    oauth_section,
-    service_data,
-    write_jwks,
-    write_service_file,
-)
 
 from grenslan.config.loader import ConfigLoadError
 from grenslan.config.service_config import ServiceConfig, validate_service_config
@@ -32,6 +24,14 @@ from grenslan.server.deployment import (
 from grenslan.service.profiles import ALWAYS_AVAILABLE, PROFILES
 
 from jwt_fixtures import SigningKey, claims, ec_key, rsa_key
+from service_fixtures import (
+    QOR_TOKEN,
+    ZYGOS_TOKEN,
+    oauth_section,
+    service_data,
+    write_jwks,
+    write_service_file,
+)
 
 TOOLS = frozenset(ToolRegistry.load().tool_names)
 

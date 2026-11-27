@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from service_fixtures import QOR_TOKEN, oauth_section, service_data, write_service_file
 
 from grenslan.config.loader import ConfigLoadError
 from grenslan.config.provider_config import ConfigValidationError
@@ -17,6 +16,8 @@ from grenslan.config.service_config import (
     validate_service_config,
 )
 from grenslan.contracts.registry import ToolRegistry
+
+from service_fixtures import QOR_TOKEN, oauth_section, service_data, write_service_file
 
 TOOLS = frozenset(ToolRegistry.load().tool_names)
 

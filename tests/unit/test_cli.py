@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-from service_fixtures import QOR_TOKEN, service_data, write_service_file
 
 from grenslan.cli import check_config, credential_new, main
 
 from fixture_providers import fixture_config
+from service_fixtures import QOR_TOKEN, service_data, write_service_file
 from tls_fixtures import make_tls_material
 
 
@@ -89,3 +89,35 @@ def test_main_requires_a_command() -> None:
     with pytest.raises(SystemExit) as excinfo:
         main([])
     assert excinfo.value.code == 2
+
+
+def test_extension_launcher_registers_the_extension(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from example_launcher import run
+
+    environ = environment(tmp_path)
+    Path(environ["GRENSLAN_PROVIDER_CONFIG"]).write_text(yaml.safe_dump(fixture_config("primary")), encoding="utf-8")
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    assert run(["check-config"]) == 0
+    assert main(["check-config"]) == 1
+    assert "/providers/primary" in capsys.readouterr().err
+
+
+def test_check_config_verifies_the_extension_manifest(tmp_path: Path) -> None:
+    import json
+
+    from grenslan.providers.registry import ImplementationRegistry
+
+    from fixture_providers import FIXTURE_MANIFEST, FixtureSet
+
+    environ = environment(tmp_path)
+    Path(environ["GRENSLAN_PROVIDER_CONFIG"]).write_text(yaml.safe_dump(fixture_config("primary")), encoding="utf-8")
+    manifest = tmp_path / "fixture.json"
+    data = json.loads(FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    manifest.write_text(json.dumps(data | {"supported_platforms": ["linux-aarch64"]}), encoding="utf-8")
+    err = io.StringIO()
+    registry = ImplementationRegistry([FixtureSet(manifest=manifest).implementation()])
+    assert check_config(environ, io.StringIO(), err, registry) == 1
+    assert "provider 'primary'" in err.getvalue()

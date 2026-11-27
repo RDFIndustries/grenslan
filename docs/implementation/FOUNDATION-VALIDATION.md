@@ -500,7 +500,7 @@ Limitations carried forward:
 - Logging is the Python standard library's. Handler, format and destination are deployment configuration, to be documented with packaging.
 - Queued work does not exist until F07; revocation of queued operations is verified there.
 
-### 6.3 F04: configuration and provider registry (in progress)
+### 6.3 F04: configuration and provider registry (complete, for review)
 
 Service configuration specification: `docs/implementation/SERVICE-CONFIGURATION.md`, decisions D1–D8 approved by the maintainer on 2026-11-27. Two clarifications were recorded while implementing it, both within D3: `oauth.leeway_seconds` and `oauth.max_token_lifetime_seconds` need a restart (they are not issuers); removing the `oauth` section revokes every access token immediately.
 
@@ -543,6 +543,21 @@ Limitations:
 - Provider health is refreshed only on demand. The configuration defines no refresh interval, and none is invented.
 - Reload reads small, size-bounded files on the event loop.
 
-Remaining for F04:
-- Dependency manifest, platform and integrity validation at registration, and extension documentation (PC-004, PC-056 and the registry requirements of the Provider Contract; gate F-G15, T-433, T-459). The adopted contracts require these but do not define the manifest format, platform vocabulary, verification method or installation route, so a specification is drafted for maintainer approval in `docs/implementation/PROVIDER-REGISTRATION.md`.
+Registration verification and extensions (`PROVIDER-REGISTRATION.md`, decisions R1–R5 approved by the maintainer on 2026-11-27):
+
+| Component | Behaviour | Basis |
+|---|---|---|
+| `providers/MANIFEST_SCHEMA.json`, `providers/manifest.py` | Each implementation registers a dependency manifest: strict JSON, closed and bounded. Registration checks that its ID, implementation ID, version, family, contract version and platforms equal the self-description, and that the running platform (`linux-x86_64`, `linux-aarch64`, or `any`) is supported. Each listed distribution must be installed at its listed version, each listed file must match its SHA-256 digest (read in chunks), and each license notice must exist inside the manifest directory. Messages name the item, never file content. | R1–R3, PC-056, T-433 |
+| `providers/registry.py` | Manifest verification is part of creating an enabled instance, so it runs before the port is bound. `ImplementationRegistry.check` registers every enabled instance without initializing it. Disabled providers are never verified. | R3, R5 |
+| `cli.py`, `providers/builtin.py` | `check-config` performs registration. `main` and the built-in list accept an operator launcher's additional implementations; nothing is discovered from installed packages. | R4, R5, PC-004 |
+| `docs/implementation/EXTENSIONS.md`, `tests/support/example_launcher.py` | Extension guide, with the fixture provider as a worked example that the tests run. | R4, PRP-001 F04 deliverable |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1014 tests. 29 cover manifests, 4 registration with manifests, and 2 the launcher and `check-config` verification. The wheel contains the three packaged schemas. Mutation checks: skipping the digest, platform, distribution-version, license-notice or notice-path check, skipping manifest verification in the registry, registering disabled instances in `check`, or skipping registration in `check-config` each fails the tests. Each mutation was reverted.
+
+Gate assessment for F04:
+- **F-G15:** evidenced at the F04 level. Unknown, duplicate and unsafe YAML is rejected (F01 and the service file). A modified pinned executable fails verification. A failed optional provider leaves unrelated capabilities usable (`capabilities_get` stays `enabled`, and the service starts and serves). Unauthorized runtime installation, configuration or activation is denied by construction: registration exists only in code; configuration selects registered implementation IDs only; no tool's closed input schema accepts endpoints, modules or configuration. No dedicated test enumerates that last property across all 32 tools.
+- **F-G16:** the capability-state and profile portions are evidenced. Search composition remains for F06.
+- **F04 deliverables:** the validated configuration sample (`examples/service.yaml`), the extension documentation, and the provider capability and health tests are present.
+
+F04 is complete for review. The production built-in list is empty until the SearXNG provider (F05), which will ship the first real manifest.
 

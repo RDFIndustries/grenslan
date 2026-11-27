@@ -7,18 +7,26 @@ registered, which is what makes provider installation an operator action and
 not something a request or a configuration value can trigger.
 
 When a configured instance is created, its self-description is checked against
-its registration and against its callable methods. A mismatch is a
-configuration error that stops startup.
+its registration and its callable methods, and its dependency manifest is
+verified against the description, the running platform and the installed
+files (PROVIDER-REGISTRATION.md). A mismatch is a configuration error that
+stops startup. Only enabled instances are created, so a disabled provider's
+implementation is never verified.
+
+Factories must only construct the provider: they run during ``check-config``
+as well as at startup, and all I/O belongs in ``initialize``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from grenslan.config.provider_config import ImplementationSpec
+from grenslan.config.provider_config import ImplementationSpec, ProviderConfig
 from grenslan.providers.contract import Family, Provider, ProviderDescription
+from grenslan.providers.manifest import ManifestError, load_manifest, running_platform, verify_manifest
 
 CONTRACT_VERSION = "1.0"
 _LIFECYCLE_METHODS = ("describe", "initialize", "health", "shutdown")
@@ -70,6 +78,7 @@ class Implementation:
     implementation_id: str
     family: Family
     factory: Callable[[InstanceSettings], Provider]
+    manifest: Path
     settings_schema: Mapping[str, Any] | None = None
 
     def spec(self) -> ImplementationSpec:
@@ -77,7 +86,8 @@ class Implementation:
 
 
 class ImplementationRegistry:
-    def __init__(self, implementations: Iterable[Implementation]) -> None:
+    def __init__(self, implementations: Iterable[Implementation], *, platform: str | None = None) -> None:
+        self.platform = running_platform() if platform is None else platform
         self._by_id: dict[str, Implementation] = {}
         for implementation in implementations:
             if implementation.implementation_id in self._by_id:
@@ -102,7 +112,17 @@ class ImplementationRegistry:
         problem = _declaration_problem(implementation, provider, description)
         if problem is not None:
             raise ProviderRegistrationError(f"provider {provider_id!r}: {problem}")
+        try:
+            verify_manifest(load_manifest(implementation.manifest), description, platform=self.platform)
+        except ManifestError as exc:
+            raise ProviderRegistrationError(f"provider {provider_id!r}: {exc}") from None
         return provider, description
+
+    def check(self, config: ProviderConfig) -> None:
+        """Register every enabled instance without initializing it, as ``check-config`` does."""
+        for provider_id, settings in config.providers.items():
+            if settings["enabled"]:
+                self.create(provider_id, settings)
 
 
 def _declaration_problem(

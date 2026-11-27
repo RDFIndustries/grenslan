@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable
+from pathlib import Path
 
 import pytest
 
@@ -21,6 +23,7 @@ from grenslan.providers.runtime import ProviderSet
 from fixture_providers import (
     FAILURE_DETAIL_TEXT,
     FIXTURE_IMPLEMENTATION,
+    FIXTURE_MANIFEST,
     FixtureBehaviour,
     FixtureSet,
     NoSearchMethod,
@@ -149,7 +152,9 @@ async def test_factory_failure_stops_startup_without_its_message() -> None:
     def broken(_settings: object) -> object:
         raise RuntimeError(FAILURE_DETAIL_TEXT)
 
-    registry = ImplementationRegistry([Implementation(FIXTURE_IMPLEMENTATION, "search", broken)])  # type: ignore[arg-type]
+    registry = ImplementationRegistry(
+        [Implementation(FIXTURE_IMPLEMENTATION, "search", broken, FIXTURE_MANIFEST)]  # type: ignore[arg-type]
+    )
     with pytest.raises(ProviderRegistrationError) as excinfo:
         await ProviderSet.start(config("primary", registry=registry), registry)
     assert FAILURE_DETAIL_TEXT not in str(excinfo.value)
@@ -222,3 +227,34 @@ def test_every_contract_capability_has_an_execution_method() -> None:
     from grenslan.providers.registry import METHOD_BY_CAPABILITY
 
     assert set(METHOD_BY_CAPABILITY) == set(get_args(Capability))
+
+
+async def test_manifest_verification_failure_stops_startup(tmp_path: Path) -> None:
+    manifest = tmp_path / "fixture.json"
+    data = json.loads(FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    manifest.write_text(json.dumps(data | {"implementation_version": "other"}), encoding="utf-8")
+    with pytest.raises(ProviderRegistrationError, match="primary"):
+        await started(FixtureSet(manifest=manifest), "primary")
+
+
+async def test_disabled_provider_implementation_is_not_verified(tmp_path: Path) -> None:
+    fixtures = FixtureSet(manifest=tmp_path / "absent.json")
+    providers = await started(fixtures, "spare", disabled=("spare",))
+    assert providers.state("spare") == "disabled"
+
+
+def test_check_registers_enabled_instances_without_initializing() -> None:
+    fixtures = FixtureSet()
+    registry = ImplementationRegistry([fixtures.implementation()])
+    registry.check(config("primary", "spare", registry=registry, disabled=("spare",)))
+    assert fixtures.calls["primary"].initialized == 0
+    assert "spare" not in fixtures.calls
+
+
+def test_unsupported_platform_stops_registration() -> None:
+    fixtures = FixtureSet(
+        behaviours={"primary": FixtureBehaviour(describe_overrides={"supported_platforms": ("linux-aarch64",)})}
+    )
+    registry = ImplementationRegistry([fixtures.implementation()], platform="linux-x86_64")
+    with pytest.raises(ProviderRegistrationError, match="platform"):
+        registry.check(config("primary", registry=registry))

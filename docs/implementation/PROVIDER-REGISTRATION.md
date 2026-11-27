@@ -1,10 +1,10 @@
 # Provider registration: manifests, platforms, integrity and extensions
 
-**Status:** Draft for maintainer approval, 2026-11-27. Not yet an implementation requirement.
+**Status:** Approved by the maintainer, 2026-11-27 (decisions R1–R5). Normative for the implementation.
 **Scope:** What the registry validates when it registers an implementation, beyond its declaration and methods, and how an operator installs an approved extension.
 **Authority:** PC-004 (operator-controlled registration), PC-056 (lifecycle and registration validation), the registry requirements in PROVIDER_CONTRACT.md ("Registration validates implementation identity, declared family, contract version, capability-to-method compatibility, approved build/dependency manifest and platform"; "Extension registration requires documented package/adapter entrypoint, …, platform support, approved settings schema, actual integrity and license evidence, tests and operator approval"), AD-404, AD-419, AD-422, AD-425; PRP-001 F04 and gate F-G15; T-433, T-459.
 
-The adopted contracts require manifest, platform and integrity validation but do not define the manifest format, the platform names, how integrity is verified, or how an extension is installed. This document proposes decisions R1–R5 (Section 6). Identity, family, contract version and capability-to-method checks are already implemented (`src/grenslan/providers/registry.py`).
+The adopted contracts require manifest, platform and integrity validation but do not define the manifest format, the platform names, how integrity is verified, or how an extension is installed. Section 6 lists decisions R1–R5. Identity, family, contract version and capability-to-method checks are already implemented (`src/grenslan/providers/registry.py`).
 
 ## 1. Dependency manifest
 
@@ -71,8 +71,6 @@ raise SystemExit(main(implementations=[*builtin_implementations(), implementatio
 
 3. uses that launcher as the container command.
 
-R4 adds the `implementations` argument to `grenslan.cli.main` and the `builtin_implementations()` list used above; neither exists yet.
-
 Registration stays explicit, in code, and under operator control. Nothing is discovered: installed packages and entry points are never scanned, and configuration still selects only implementation IDs. A consumer cannot install, activate or reconfigure anything, because no tool or configuration value loads code (T-459).
 
 The extension's documentation must give its implementation ID, family, capabilities, settings schema, manifest, license evidence and tests, as the Provider Contract requires. Grenslan's documentation gains an extension guide with a worked fixture extension used by the test suite.
@@ -81,7 +79,7 @@ The extension's documentation must give its implementation ID, family, capabilit
 
 Entry points discovered from installed packages (`grenslan.providers` group), activated only when an operator approval file lists the implementation ID, distribution and manifest digest. This avoids a launcher module, but brings in discovery and a second approval file, and makes "what is installed" decide what can load. The contract says a plugin framework is unnecessary, so R4 is recommended.
 
-## 6. Decisions requested
+## 6. Decisions
 
 | ID | Proposal | Main alternative |
 |---|---|---|

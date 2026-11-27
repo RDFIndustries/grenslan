@@ -1,0 +1,13 @@
+{
+  "manifest_version": "1.0",
+  "manifest_id": "fixture",
+  "implementation_id": "fixture_search",
+  "implementation_version": "0-test",
+  "family": "search",
+  "contract_version": "1.0",
+  "supported_platforms": ["any"],
+  "distributions": [{ "name": "pyyaml", "version": "6.0.4", "license": "MIT" }],
+  "files": [],
+  "license_notices": ["fixture-notice.txt"],
+  "known_limitations": ["Test fixture; never registered in production."]
+}

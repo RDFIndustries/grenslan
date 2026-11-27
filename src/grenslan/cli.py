@@ -14,13 +14,13 @@ import logging
 import os
 import secrets
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import TextIO
 
 from grenslan.config.loader import ConfigLoadError
 from grenslan.contracts.registry import ToolRegistry
 from grenslan.providers.builtin import builtin_registry
-from grenslan.providers.registry import ProviderRegistrationError
+from grenslan.providers.registry import Implementation, ImplementationRegistry, ProviderRegistrationError
 from grenslan.server.runner import ConfigPaths, run_service, validate_configuration
 from grenslan.server.tls import TlsConfigError
 
@@ -46,11 +46,15 @@ def _report(error: Exception, err: TextIO) -> None:
         print(f"error: {error}", file=err)
 
 
-def check_config(environ: Mapping[str, str], out: TextIO, err: TextIO) -> int:
+def check_config(
+    environ: Mapping[str, str], out: TextIO, err: TextIO, implementations: ImplementationRegistry | None = None
+) -> int:
     paths = ConfigPaths.from_environment(environ)
+    registry = builtin_registry() if implementations is None else implementations
     try:
-        validate_configuration(paths, environ, ToolRegistry.load(), builtin_registry())
-    except (ConfigLoadError, TlsConfigError) as error:
+        validated = validate_configuration(paths, environ, ToolRegistry.load(), registry)
+        registry.check(validated.providers)
+    except (ConfigLoadError, TlsConfigError, ProviderRegistrationError) as error:
         _report(error, err)
         return 1
     print(f"configuration is valid: {paths.service}, {paths.providers}", file=out)
@@ -69,24 +73,26 @@ def credential_new(out: TextIO, err: TextIO) -> int:
     return 0
 
 
-def serve(environ: Mapping[str, str], err: TextIO) -> int:
+def serve(environ: Mapping[str, str], err: TextIO, implementations: ImplementationRegistry | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
-        asyncio.run(run_service(environ))
+        asyncio.run(run_service(environ, implementations=implementations))
     except (ConfigLoadError, TlsConfigError, ProviderRegistrationError) as error:
         _report(error, err)
         return 1
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, implementations: Iterable[Implementation] | None = None) -> int:
+    """Run a command. ``implementations`` replaces the built-in list; a launcher passes it to add an extension."""
     arguments = _parser().parse_args(argv)
     environ = dict(os.environ)
+    registry = None if implementations is None else ImplementationRegistry(implementations)
     if arguments.command == "check-config":
-        return check_config(environ, sys.stdout, sys.stderr)
+        return check_config(environ, sys.stdout, sys.stderr, registry)
     if arguments.command == "credential":
         return credential_new(sys.stdout, sys.stderr)
-    return serve(environ, sys.stderr)
+    return serve(environ, sys.stderr, registry)
 
 
 if __name__ == "__main__":

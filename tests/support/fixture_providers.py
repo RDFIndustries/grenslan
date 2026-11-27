@@ -10,6 +10,7 @@ import asyncio
 import copy
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from grenslan.providers.contract import (
@@ -30,6 +31,7 @@ from grenslan.providers.registry import Implementation, InstanceSettings
 from config_fixtures import connected_config
 
 FIXTURE_IMPLEMENTATION = "fixture_search"
+FIXTURE_MANIFEST = Path(__file__).with_name("manifests") / "fixture.json"
 Behaviour = Literal["ok", "fail", "raise", "hang"]
 
 
@@ -115,6 +117,7 @@ class FixtureSet:
     behaviours: dict[str, FixtureBehaviour] = field(default_factory=dict)
     calls: dict[str, Calls] = field(default_factory=dict)
     provider_class: type[FixtureSearchProvider] = FixtureSearchProvider
+    manifest: Path = FIXTURE_MANIFEST
 
     def implementation(self) -> Implementation:
         def create(settings: InstanceSettings) -> FixtureSearchProvider:
@@ -122,7 +125,9 @@ class FixtureSet:
             calls = self.calls.setdefault(settings.provider_id, Calls())
             return self.provider_class(settings.provider_id, behaviour, calls)
 
-        return Implementation(implementation_id=FIXTURE_IMPLEMENTATION, family="search", factory=create)
+        return Implementation(
+            implementation_id=FIXTURE_IMPLEMENTATION, family="search", factory=create, manifest=self.manifest
+        )
 
 
 def fixture_config(*provider_ids: str, disabled: tuple[str, ...] = (), timeout_ms: int = 2000) -> dict[str, Any]:

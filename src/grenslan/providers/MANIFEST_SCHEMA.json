@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:grenslan:provider-manifest:1.0",
+  "title": "Grenslan provider dependency manifest",
+  "description": "Specified by docs/implementation/PROVIDER-REGISTRATION.md (R1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version", "manifest_id", "implementation_id", "implementation_version", "family",
+    "contract_version", "supported_platforms", "distributions", "files", "license_notices", "known_limitations"
+  ],
+  "properties": {
+    "manifest_version": { "const": "1.0" },
+    "manifest_id": { "$ref": "#/$defs/identifier" },
+    "implementation_id": { "$ref": "#/$defs/identifier" },
+    "implementation_version": { "$ref": "#/$defs/text" },
+    "family": { "enum": ["search", "retrieval", "browser", "content", "ocr", "intelligence"] },
+    "contract_version": { "const": "1.0" },
+    "supported_platforms": {
+      "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true,
+      "items": { "enum": ["linux-x86_64", "linux-aarch64", "any"] }
+    },
+    "distributions": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "version", "license"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[A-Za-z0-9]([A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$" },
+          "version": { "$ref": "#/$defs/text" },
+          "license": { "$ref": "#/$defs/text" }
+        }
+      }
+    },
+    "files": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["path", "sha256", "license", "role"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^/", "minLength": 2, "maxLength": 4096 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "license": { "$ref": "#/$defs/text" },
+          "role": { "enum": ["binary", "library", "model_weights", "browser", "data"] }
+        }
+      }
+    },
+    "license_notices": {
+      "type": "array", "maxItems": 256,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "known_limitations": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/text" } }
+  },
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 512 }
+  }
+}
