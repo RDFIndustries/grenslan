@@ -90,7 +90,7 @@ Every section and field is required unless marked optional. Unknown keys are rej
 | `config_version` | `"1.0"` | |
 | `listen.host` | IP address or host name | Address inside the container. |
 | `listen.port` | integer 1–65535 | |
-| `tls.certificate_file`, `tls.private_key_file` | absolute paths | Read at startup. A missing, unreadable or mismatched pair prevents admission (AD-428). Replaced by changing the files and restarting. |
+| `tls.certificate_file`, `tls.private_key_file` | absolute paths | Read at startup. A missing, unreadable or mismatched pair prevents admission (AD-428). Replaced by changing the files and restarting. Any issuer may supply them; without one, `grenslan tls new` creates them (Section 8). |
 | `ingress.allowed_hosts` | nonempty list of host names or IP literals, without port | Matched against `Host`, case-insensitively. |
 | `ingress.allowed_origins` | list of origins `scheme://host[:port]`, `https` or `http` | These are browser page origins, not Grenslan's own transport. A request whose `Origin` is not listed gets 403; requests without `Origin` are unaffected. |
 | `ingress.max_request_bytes` | integer ≥ 1 | REST and MCP bodies. |
@@ -166,6 +166,7 @@ Rules:
 - `grenslan check-config`: validates both files and the environment overrides, loads the TLS pair and key sets, reports every problem with its location, and exits nonzero on failure. It never prints secret values or digests.
 - `grenslan serve`: performs the same validation, then starts HTTPS. Any validation failure stops startup before the port is bound.
 - `grenslan credential new`: see D2.
+- `grenslan tls new`: for deployments without their own certificate issuer. It creates an ECDSA P-256 server certificate for the given `--name` host names and IP addresses, signed by a new private CA, or by an existing CA given with `--ca-certificate` and `--ca-key` so that a replacement needs no new trust. `--days` (at most 825) and, for a new CA, `--ca-days` (at most 3650) are required, and the certificate cannot outlive its CA. Existing files are never overwritten; private keys are created owner-only. It prints the `tls` lines for this file; consumers trust the CA certificate. A new certificate takes effect at restart.
 
 **D7.** The server runs as one process with one event loop. Uvicorn is already pinned; the container's process supervision is settled with packaging and F05 (SearXNG).
 

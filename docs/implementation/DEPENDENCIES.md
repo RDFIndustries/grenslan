@@ -12,7 +12,7 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 | attrs | 26.1.0 | MIT | runtime | transitive |
 | cffi | 2.1.1 | MIT-0 | runtime | transitive |
 | click | 8.5.1 | BSD-3-Clause | runtime | transitive |
-| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | runtime | transitive |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | runtime | direct |
 | fqdn | 1.6.0 | MPL-2.0 | runtime | transitive |
 | h11 | 0.16.0 | MIT License | runtime | transitive |
 | httpcore2 | 2.16.2 | BSD-3-Clause | runtime | direct |
@@ -69,7 +69,8 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 - `fqdn` (runtime, via `jsonschema[format-nongpl]`) and `pathspec` (dev only, via `mypy`) are MPL-2.0, a file-level copyleft licence. Distributing unmodified MPL-2.0 files alongside Apache-2.0 code is permitted; modified MPL-2.0 files must remain available under MPL-2.0. Neither file is modified.
 - `cryptography` is dual-licensed Apache-2.0 OR BSD-3-Clause, and `packaging` Apache-2.0 OR BSD-2-Clause.
 - `typing_extensions` is PSF-2.0.
-- `cryptography` and `httpx2` are also declared as direct dev dependencies, at the versions already locked for runtime. Tests use `cryptography` to generate a throwaway CA and server certificate, and `httpx2` as the HTTPS and MCP client. Neither adds a package to the lock.
+- `cryptography` is a direct runtime dependency: `grenslan tls new` uses it to issue a private CA and server certificate, and tests use it for throwaway TLS material. It was already locked at the same version through `mcp` and `pyjwt[crypto]`, so no package was added.
+- `httpx2` is also declared as a direct dev dependency, at the version already locked for runtime. Tests use it as the HTTPS and MCP client. It adds no package to the lock.
 - `pyyaml` (added for the operator configuration loader, PC-059) has no dependencies and ships CPython 3.12 manylinux wheels for x86_64 and aarch64. Only its safe loader is used, behind `grenslan.config.yaml_loader`, which additionally rejects duplicate keys, every explicit tag, anchors, aliases and merge keys.
 - `pyjwt` (with its `crypto` extra, which uses `cryptography`) is a direct dependency for validating OAuth access tokens. It was already locked at the same version through `mcp`, so no package was added. Only the RS256 and ES256 verification paths are used, with keys supplied as configuration; PyJWT's key-set fetching client is not used.
 - SearXNG (AGPL-3.0) is not a Python dependency of this package. Its distribution and corresponding-source obligations are tracked separately in the validation record.

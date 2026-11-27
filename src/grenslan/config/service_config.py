@@ -110,7 +110,8 @@ def apply_environment(
     return result, problems
 
 
-def _is_host(value: str) -> bool:
+def is_host(value: str) -> bool:
+    """True for an IP address or a host name (lower case, without a port)."""
     try:
         ipaddress.ip_address(value)
     except ValueError:
@@ -131,7 +132,7 @@ class _Checker:
         self.problems.append(ConfigProblem(location, message))
 
     def run(self) -> list[ConfigProblem]:
-        if not _is_host(self.data["listen"]["host"].lower()):
+        if not is_host(self.data["listen"]["host"].lower()):
             self.problem("/listen/host", "must be an IP address or host name")
         ingress = self.data["ingress"]
         ingress["allowed_hosts"] = [
@@ -158,7 +159,7 @@ class _Checker:
 
     def host(self, location: str, value: str) -> str:
         normalized = value.lower()
-        if not _is_host(normalized):
+        if not is_host(normalized):
             self.problem(location, "must be a host name or IP address without a port")
         return normalized
 
@@ -178,7 +179,7 @@ class _Checker:
             or parts.query
             or parts.fragment
             or normalized.endswith(("?", "#"))
-            or not _is_host(parts.hostname)
+            or not is_host(parts.hostname)
         ):
             self.problem(location, "must be an origin of the form scheme://host[:port] with scheme https or http")
         elif port == _DEFAULT_PORTS[parts.scheme]:

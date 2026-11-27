@@ -559,5 +559,14 @@ Gate assessment for F04:
 - **F-G16:** the capability-state and profile portions are evidenced. Search composition remains for F06.
 - **F04 deliverables:** the validated configuration sample (`examples/service.yaml`), the extension documentation, and the provider capability and health tests are present.
 
+Certificate issuance (`grenslan tls new`, added at the maintainer's request on 2026-11-27 because not every integration can issue certificates):
+
+| Component | Behaviour | Basis |
+|---|---|---|
+| `server/tls_issue.py`, `cli.py` | Creates an ECDSA P-256 server certificate (SAN host names and IP addresses, `serverAuth`, not a CA) signed by a new P-256 private CA (path length 0) or by an operator-supplied EC or RSA CA whose key must match it. Validity is required on the command line, bounded at 825 days for the server and 3650 for a CA, and the certificate cannot outlive its CA. All requests are validated before writing; existing files are never overwritten, including one that appears while writing; private keys are created with mode 0600 and a new directory with 0700. Output gives the configuration lines and CA path, never key material. Externally issued files remain fully supported. | AD-428 |
+| `cryptography` | Now a direct runtime dependency, at the version already locked. | DEPENDENCIES.md |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1035 tests; 21 cover certificate issuance, including real TLS handshakes through the issued CA (accepted for each name, rejected for another) and reissuing from an existing CA. Mutation checks: making the server key world-readable, dropping the overwrite check, opening without exclusive create, dropping the CA-lifetime check for a reused CA, the CA basic-constraints check, the key-match check or the name check each fails the tests. The first run left two mutations alive; tests for a file created during writing and for a reused CA expiring too soon were added. Each mutation was reverted.
+
 F04 is complete for review. The production built-in list is empty until the SearXNG provider (F05), which will ship the first real manifest.
 

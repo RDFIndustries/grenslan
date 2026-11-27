@@ -41,6 +41,7 @@ Ruff and mypy cover `src/` and `tests/`. `docs/` is excluded from linting becaus
 
 ```sh
 uv run grenslan credential new          # a consumer token and its token_sha256
+uv run grenslan tls new --name grenslan --name localhost --days 397 --ca-days 3650 --output-dir ./tls
 GRENSLAN_SERVICE_CONFIG=examples/service.yaml GRENSLAN_PROVIDER_CONFIG=path/to/providers.yaml \
   uv run grenslan check-config
 uv run grenslan serve                    # same environment; SIGHUP reloads credentials and issuers

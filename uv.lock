@@ -196,6 +196,7 @@ version = "0.1.0.dev0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },
+    { name = "cryptography" },
     { name = "httpcore2" },
     { name = "jsonschema", extra = ["format-nongpl"] },
     { name = "mcp" },
@@ -208,7 +209,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "cryptography" },
     { name = "httpx2" },
     { name = "mypy" },
     { name = "pytest" },
@@ -221,6 +221,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anyio", specifier = "==4.16.0" },
+    { name = "cryptography", specifier = "==50.0.2" },
     { name = "httpcore2", specifier = "==2.16.2" },
     { name = "jsonschema", extras = ["format-nongpl"], specifier = "==4.26.0" },
     { name = "mcp", specifier = "==2.3.0" },
@@ -233,7 +234,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cryptography", specifier = "==50.0.2" },
     { name = "httpx2", specifier = "==2.16.2" },
     { name = "mypy", specifier = "==2.4.1" },
     { name = "pytest", specifier = "==9.2.0" },
