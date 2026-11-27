@@ -3,12 +3,12 @@
 | Attribute | Value |
 |---|---|
 | Date | 2026-11-26 (Pacific) |
-| Scope | Initial PRP-001 preflight, before a repository checkout |
+| Scope | PRP-001 F01 preflight: initial documentation-workspace checks and development-workspace rerun |
 | Architecture | v0.1, Revision 12, Checkpoint 011 |
 | Public contract | 1.0, TC-001–057 |
 | Provider contract | 1.0, PC-001–066 |
-| PRP-001 | Adopted |
-| Preflight status | Started; incomplete |
+| PRP-001 | Adopted by maintainer, 2026-11-26 |
+| Preflight status | In progress; repository readiness and contract checks complete in development workspace; other rows open |
 | Runtime acceptance | 0 of 120 executed |
 
 ## 1. What has been verified
@@ -102,13 +102,99 @@ cdb0328820d2ab844d7057c702429665628d3157348046f71907548b616a6802 PROVIDER_INTERF
 
 The companion script is a preflight test, not service implementation.
 
-## 4. Remaining preflight in actual development workspace
+## 4. Development workspace preflight
+
+### 4.1 Environment and repository
+
+| Item | Observed result (2026-11-26, Pacific) |
+|---|---|
+| Host | Ubuntu 24.04.5 LTS on WSL2 (kernel 5.15.167.4-microsoft-standard-WSL2), x86_64 |
+| Python | 3.12.3 (system `/usr/bin/python3.12`) |
+| OpenSSL | 3.0.13 (30 Jan 2024), system and Python `ssl` module |
+| Resolver | uv 0.8.8 installed locally; PyPI lists 0.13.10 as current. Lock tooling not yet selected or pinned |
+| Docker | Docker 29.8.2 available; container and egress proof not yet executed |
+| Repository | Git repository initialized on branch `main`; baseline commit `1e704995327bbb699beb22e538e2961d24946c01`; remote `https://github.com/RDFIndustries/grenslan` (public). A Gitea mirror is requested and not yet configured |
+
+Document placement was reconciled before the baseline commit. The adopted contract set, PRP-000 and PRP-001 were moved to the locations named in `AGENTS.md`. Superseded working revisions were moved to the ignored local `docs/archive/` directory and are not active requirements. The contract hashes in Section 3 match the files now in `docs/contracts/` exactly.
+
+Baseline SHA-256 of the remaining authoritative documents at the baseline commit, after recording PRP-001 adoption:
+
+```text
+4d4c56390abe0c5368af8a1ecf6abf02c8e14d1e6ddfec11c336c7d9891dbbea docs/ARCHITECTURE.md
+33783ebc18db093291f84e7f458136fe99fca7424552b41f738338d0d91f4c79 docs/DECISION_REGISTER.md
+903b96bf1e33324f50405a4809dddf27a8a922bd0b3d975756d1023f831589a5 docs/prp/PRP-000-MASTER.md
+30eaefa0595dc50a17712a6e9cde2ac8c627a25e3df60b8251d28247fa3741ef docs/prp/PRP-001-FOUNDATION.md
+```
+
+### 4.2 Contract and TLS primitive checks rerun
+
+Command, from the repository root, using an isolated throwaway virtual environment with jsonschema 4.26.0:
+
+```shell
+uv venv -p 3.12 <scratch>/preflight-venv
+uv pip install -p <scratch>/preflight-venv/bin/python jsonschema 'jsonschema[format]'
+<scratch>/preflight-venv/bin/python -I docs/implementation/FOUNDATION-PREFLIGHT.py --tls-smoke
+```
+
+Executed 2026-11-26T21:59:30-08:00. Exit status 0.
+
+| Check | Outcome |
+|---|---|
+| 64 projected tool schemas, 8 representative assertions, configuration meta-schema, 8 protocol declarations | PASS |
+| Contract file SHA-256 | PASS, identical to Section 3 |
+| Loopback TLS with explicitly trusted ephemeral certificate | PASS, negotiated TLSv1.3 |
+| Untrusted certificate and wrong hostname rejected | PASS |
+
+The scope limits stated in Section 3 still apply: these are primitive checks, not F-G03 or architecture acceptance evidence.
+
+### 4.3 Candidate package versions observed on PyPI
+
+Queried from `https://pypi.org/pypi/<name>/json` on 2026-11-26. These are observations, not pins.
+
+| Package | Latest observed | Declared license | Requires-Python |
+|---|---|---|---|
+| mcp | 2.3.0 | MIT | >=3.10 |
+| mcp-types | 2.3.0 | MIT | >=3.10 |
+| fastapi | 0.165.0 | MIT | >=3.11 |
+| uvicorn | 0.54.0 | BSD-3-Clause | >=3.10 |
+| hypercorn | 0.18.0 | MIT | >=3.10 |
+| httpx | 0.29.0 | BSD-3-Clause | >=3.10 |
+| pydantic | 2.14.4 | MIT | >=3.10 |
+| pyyaml | 6.0.4 | MIT | >=3.10 |
+| jsonschema | 4.26.0 | MIT | >=3.10 |
+| pytest | 9.2.0 | MIT | >=3.10 |
+| pytest-asyncio | 1.5.0 | Apache-2.0 | >=3.10 |
+| ruff | 0.17.6 | MIT | >=3.7 |
+| mypy | 2.4.1 | MIT | >=3.10 |
+
+Declared package metadata licenses are not a substitute for the dependency license review required by AGENTS.md Section 8; transitive review remains open.
+
+### 4.4 MCP SDK 2.3.0 inspection
+
+`mcp==2.3.0` was installed into an isolated throwaway environment and its installed source was inspected. It resolved these runtime dependencies: anyio 4.16.0, cryptography 50.0.2, httpx2 2.16.2, httpcore2 2.16.2, jsonschema 4.26.0, mcp-types 2.3.0, opentelemetry-api 1.45.2, pydantic 2.14.4, pyjwt 2.15.1, python-multipart 0.0.34, sse-starlette 3.7.1, starlette 1.10.0, truststore 0.10.5 and uvicorn 0.54.0, plus their support packages.
+
+Findings:
+
+1. `mcp_types.version` declares `MODERN_PROTOCOL_VERSIONS = ("2026-07-28",)` and `HANDSHAKE_PROTOCOL_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")`. The deprecated `SUPPORTED_PROTOCOL_VERSIONS` is the union of both.
+2. `StreamableHTTPSessionManager._handle_request` routes by the `MCP-Protocol-Version` header only. A request whose header is present and not a handshake version goes to the modern handler. A request with **no header**, or with a handshake version, is served by the legacy stateful or stateless handshake path. This confirms the Section 2 risk: mounting the session manager unwrapped would accept legacy clients.
+3. The modern path rejects `initialize` with error `-32022` (unsupported protocol version) and data listing the supported modern versions. `mcp.shared.inbound.classify_inbound_request` validates the per-request `_meta` envelope, header and body consistency (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`) and the supported version. `find_duplicated_routing_header` detects duplicate routing headers. Both are in a public, non-underscored module.
+4. The modern HTTP entry point `handle_modern_request` lives in the private module `mcp.server._streamable_http_modern`. Section 2 forbids relying on private SDK internals.
+5. OpenTelemetry is used only through `opentelemetry-api`. No OpenTelemetry SDK or exporter is installed as a dependency, and a source comment in `mcp/server/lowlevel/server.py` states that its spans are no-ops until an exporter is configured. Absence of outbound telemetry connections has not yet been demonstrated at runtime.
+6. The SDK depends on `httpx2` and `httpcore2`, which are distinct from the `httpx` discovery-transport candidate. Their provenance, license and the effect of having two HTTP client stacks are not yet reviewed.
+
+Candidate F03 approach, not yet validated: a Grenslan ASGI gate in front of the public session manager that admits only `POST /mcp` with exactly one `MCP-Protocol-Version: 2026-07-28` header. It rejects absent, duplicate, handshake-era and unknown versions with the specified unsupported-version or validation response before the request reaches the SDK, so the legacy handler is unreachable. It also rejects GET and DELETE on `/mcp`, and no session ID is issued. Whether this gate plus the public session manager delivers correct modern discovery and invocation, cancellation and authorization remains the F03 spike in Section 2.
+
+### 4.5 Knowledge-base coverage
+
+The local research knowledge base contains SearXNG, Crossref REST API and arXiv API documentation. It does not contain the MCP specification, the MCP Python SDK, PubMed E-utilities, OpenAlex or the GitHub REST search API. Verification of those sources must use the primary URLs directly.
+
+## 5. Remaining preflight in development workspace
 
 | Work | Next evidence |
 |---|---|
-| Repository readiness | Inspect clone, branch, working tree and document revisions; do not overwrite unrelated work. |
+| Repository readiness | Complete (Section 4.1). Gitea mirror outstanding. |
 | Python and resolver | Establish reproducible venv and lock, verify Python/platform compatibility, actual dependency/license/security inventory. |
-| MCP SDK / ingress spike | Verify current-only protocol enforcement and modern discovery/invocation, then pin compatible SDK/types. |
+| MCP SDK / ingress spike | Source inspection done (Section 4.4). Build and test the ingress gate; verify modern discovery and invocation, no outbound telemetry, then pin compatible SDK/types. |
 | TLS and identity | Actual HTTPS ASGI/MCP/REST test with private CA, auth and delegation; no plaintext bypass; certificate replacement. |
 | Provider config | Safe parser and cross-field scope/registry checks with sanitized fixtures. |
 | Outbound enforcement | Demonstrate actual resolved connection, redirect, DNS and credential policies; negative fixtures. |
