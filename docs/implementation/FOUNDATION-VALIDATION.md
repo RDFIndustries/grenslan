@@ -499,3 +499,23 @@ Limitations carried forward:
 - Ingress settings, credentials, issuers, security-event limits and TLS file paths are constructed in code until F04 adds the operator configuration file. The security-event limits then become operator settings.
 - Logging is the Python standard library's. Handler, format and destination are deployment configuration, to be documented with packaging.
 - Queued work does not exist until F07; revocation of queued operations is verified there.
+
+### 6.3 F04: configuration and provider registry (in progress)
+
+Service configuration specification: drafted as `docs/implementation/SERVICE-CONFIGURATION.md` (decisions D1–D8), awaiting maintainer approval. Its implementation (service file loading, environment overrides, `SIGHUP` credential reload and commands) waits for that approval.
+
+Implemented in `src/grenslan/providers/` (independent of the pending decisions):
+
+| Component | Behaviour | Contract basis |
+|---|---|---|
+| `providers/registry.py` | Implementations are registered explicitly in code by implementation ID and family. There is no package discovery and no loading by name from configuration. Configuration validation can select only registered implementations. Creating an instance checks its self-description against the registration: implementation ID, family, contract version 1.0, at least one capability, each capability unique and in the family, and a callable method for every lifecycle step and declared capability (`close_session` also for browsers). A mismatch, or a factory or `describe` failure, stops startup with a `ProviderRegistrationError` that names the provider but not the exception text. | PC-002, PC-004, PC-056 |
+| `providers/runtime.py` | Disabled instances are never created and stay `disabled`. Enabled instances initialize concurrently, each within the lower of the global and instance `timeout_ms`, passing a `LifecycleContext` with that deadline and a cancellation signal. A failed result, an exception, an overrun or an invalid reported state makes that instance `unavailable` with a `provider_unavailable`, `internal_error` or `timeout` issue, without affecting the others or startup. Health refresh moves instances between `ready`, `degraded` and `unavailable` under the same deadline. Shutdown stops every created instance within its deadline and leaves it `stopped`, whatever it does. Eligibility for a capability follows the configured route order, keeping only `ready` or `degraded` instances that declare it; nothing is substituted when none qualifies. Provider exception text is never logged or reported. | PC-006, PC-010, PC-056; D8 (proposed) |
+| `tests/support/fixture_providers.py` | A controlled fixture search provider and configuration, registered only by tests through the same registry, so production cannot return test data or default to it. | PRP-001 F04 |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 879 tests; 26 cover registration and lifecycle. Mutation checks: skipping the method check, the family check or the state filter on eligibility, creating disabled instances, or removing the lifecycle deadline each fails the tests. Each mutation was reverted. Tests involving hung providers have an outer bound, so a missing deadline fails rather than hangs.
+
+Remaining for F04:
+- After approval of the specification: service configuration loading and validation, environment overrides, `SIGHUP` reload, `check-config`, `serve` and `credential new`, and a validated configuration sample.
+- Effective capability projection for `capabilities_get`, and safe profile discovery.
+- Extension documentation for operator-installed implementations.
+
