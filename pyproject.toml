@@ -26,6 +26,8 @@ dependencies = [
     # format-nongpl avoids the GPL-licensed rfc3987 pulled in by the "format" extra.
     "jsonschema[format-nongpl]==4.26.0",
     "pyyaml==6.0.4",
+    # Local validation of MCP-compatible OAuth access tokens; "crypto" provides RS256 and ES256.
+    "pyjwt[crypto]==2.15.1",
 ]
 
 [project.urls]
@@ -71,7 +73,7 @@ extend-exclude = ["docs"]
 select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "PT", "SIM"]
 
 [tool.ruff.lint.isort]
-known-local-folder = ["minimal_requests", "config_fixtures", "tls_fixtures", "ingress_fixtures"]
+known-local-folder = ["minimal_requests", "config_fixtures", "tls_fixtures", "ingress_fixtures", "jwt_fixtures"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

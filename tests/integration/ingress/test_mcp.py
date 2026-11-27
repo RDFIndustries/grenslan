@@ -249,3 +249,11 @@ async def test_revocation_stops_active_mcp_work(material: TlsMaterial) -> None:
             with pytest.raises(MCPError):
                 await asyncio.wait_for(call, 5)
         assert running.handler.cancelled
+
+
+async def test_auto_mode_client_settles_on_current_revision(server: RunningServer, http: httpx2.AsyncClient) -> None:
+    http.headers["Authorization"] = f"Bearer {TOKEN}"
+    transport = streamable_http_client(f"{server.base_url}/mcp", http_client=http, terminate_on_close=False)
+    async with Client(transport, mode="auto") as client:
+        await client.call_tool("web_search", {"query": "x"})
+        assert client.protocol_version == VERSION

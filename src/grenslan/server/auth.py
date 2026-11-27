@@ -20,12 +20,13 @@ import re
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from grenslan.service.context import InvocationContext
 
 MAX_AUTHORIZATION_BYTES = 4096
 _BEARER = re.compile(rb"^[Bb][Ee][Aa][Rr][Ee][Rr] ([A-Za-z0-9\-._~+/]+=*)$")
-_IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$")
+IDENTITY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$")
 _DELEGATION_HEADERS = {
     "grenslan-user-id": "user_id",
     "grenslan-agent-id": "agent_id",
@@ -36,6 +37,33 @@ _DELEGATION_HEADERS = {
 def token_digest(token: str) -> bytes:
     """SHA-256 digest under which a credential is stored and looked up."""
     return hashlib.sha256(token.encode("ascii")).digest()
+
+
+def bearer_token(authorization: Sequence[bytes]) -> bytes:
+    """The token from exactly one well-formed ``Authorization: Bearer`` header value."""
+    if len(authorization) != 1 or len(authorization[0]) > MAX_AUTHORIZATION_BYTES:
+        raise AuthenticationFailed
+    match = _BEARER.match(authorization[0])
+    if match is None:
+        raise AuthenticationFailed
+    return match.group(1)
+
+
+class ContextGrant(Protocol):
+    """What an authenticated principal contributes to the trusted context."""
+
+    @property
+    def application_id(self) -> str: ...
+    @property
+    def permissions(self) -> frozenset[str]: ...
+    @property
+    def delegation(self) -> bool: ...
+    @property
+    def user_id(self) -> str | None: ...
+    @property
+    def agent_id(self) -> str | None: ...
+    @property
+    def instance_id(self) -> str | None: ...
 
 
 class AuthenticationFailed(Exception):
@@ -124,16 +152,18 @@ class CredentialStore:
 
     def authenticate(self, authorization: Sequence[bytes]) -> ApplicationCredential:
         """Resolve the single ``Authorization`` header value to a current credential."""
-        if len(authorization) != 1 or len(authorization[0]) > MAX_AUTHORIZATION_BYTES:
+        credential = self.lookup(bearer_token(authorization))
+        if credential is None:
             raise AuthenticationFailed
-        match = _BEARER.match(authorization[0])
-        if match is None:
-            raise AuthenticationFailed
-        digest = hashlib.sha256(match.group(1)).digest()
+        return credential
+
+    def lookup(self, token: bytes) -> ApplicationCredential | None:
+        """The current credential for a bearer token, or ``None``."""
+        digest = hashlib.sha256(token).digest()
         with self._lock:
             credential = self._by_digest.get(digest)
         if credential is None or not hmac.compare_digest(credential.token_sha256, digest):
-            raise AuthenticationFailed
+            return None
         return credential
 
     def is_current(self, credential: ApplicationCredential) -> bool:
@@ -142,8 +172,8 @@ class CredentialStore:
             return self._by_digest.get(credential.token_sha256) == credential
 
 
-def establish_context(credential: ApplicationCredential, headers: Mapping[str, Sequence[bytes]]) -> InvocationContext:
-    """Build the trusted context from a credential and lowercase-named request headers."""
+def establish_context(credential: ContextGrant, headers: Mapping[str, Sequence[bytes]]) -> InvocationContext:
+    """Build the trusted context from a principal and lowercase-named request headers."""
     identities: dict[str, str | None] = {
         "user_id": credential.user_id,
         "agent_id": credential.agent_id,
@@ -163,7 +193,7 @@ def establish_context(credential: ApplicationCredential, headers: Mapping[str, S
             value = values[0].decode("ascii")
         except UnicodeDecodeError:
             raise ContextRejected(400, "invalid context header value") from None
-        if not _IDENTITY.match(value):
+        if not IDENTITY_PATTERN.match(value):
             raise ContextRejected(400, "invalid context header value")
         identities[target] = value
     return InvocationContext(

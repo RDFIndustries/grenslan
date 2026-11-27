@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -11,13 +12,9 @@ import anyio
 from starlette.responses import Response
 from starlette.types import Send
 
-from grenslan.server.auth import (
-    ApplicationCredential,
-    AuthenticationFailed,
-    ContextRejected,
-    CredentialStore,
-    establish_context,
-)
+from grenslan.server.auth import AuthenticationFailed, ContextRejected, establish_context
+from grenslan.server.authenticator import Authenticator, Principal
+from grenslan.server.oauth import TokenPrincipal
 from grenslan.service.context import InvocationContext
 from grenslan.service.dispatch import DispatchResult
 
@@ -54,8 +51,8 @@ def error_response(status: int, code: str, headers: dict[str, str] | None = None
     return json_response(status, {"error": code}, headers)
 
 
-def unauthorized() -> Response:
-    return error_response(401, "unauthorized", {"WWW-Authenticate": 'Bearer realm="grenslan"'})
+def unauthorized(challenge: str) -> Response:
+    return error_response(401, "unauthorized", {"WWW-Authenticate": challenge})
 
 
 async def send_json(
@@ -79,12 +76,13 @@ def header_values(scope: dict[str, Any] | Any) -> dict[str, list[bytes]]:
 
 
 def authenticate(
-    store: CredentialStore, headers: dict[str, list[bytes]]
-) -> tuple[ApplicationCredential, InvocationContext] | Response:
+    authenticator: Authenticator, headers: dict[str, list[bytes]]
+) -> tuple[Principal, InvocationContext] | Response:
+    authorization = headers.get("authorization", [])
     try:
-        credential = store.authenticate(headers.get("authorization", []))
+        credential = authenticator.authenticate(authorization)
     except AuthenticationFailed:
-        return unauthorized()
+        return unauthorized(authenticator.challenge(token_presented=bool(authorization)))
     try:
         return credential, establish_context(credential, headers)
     except ContextRejected as exc:
@@ -92,13 +90,15 @@ def authenticate(
 
 
 async def run_while_authorized(
-    store: CredentialStore,
-    credential: ApplicationCredential,
+    authenticator: Authenticator,
+    principal: Principal,
     work: Callable[[], Awaitable[DispatchResult]],
 ) -> DispatchResult | None:
-    """Run ``work``; return None if the credential was revoked or changed before it finished."""
+    """Run ``work``; return None if the principal was revoked, changed or expired before it finished."""
     with anyio.CancelScope() as scope:
-        unwatch = store.watch(credential, scope.cancel)
+        if isinstance(principal, TokenPrincipal):
+            scope.deadline = anyio.current_time() + max(0.0, principal.expires_at - time.time())
+        unwatch = authenticator.watch(principal, scope.cancel)
         try:
             return await work()
         finally:

@@ -37,7 +37,9 @@ from grenslan import __version__
 from grenslan.contracts.envelope import FAILURE_STATUSES
 from grenslan.contracts.registry import ToolRegistry
 from grenslan.server.app_support import IngressSettings, authenticate, header_values, run_while_authorized, send_json
-from grenslan.server.auth import ApplicationCredential, CredentialStore
+from grenslan.server.auth import ApplicationCredential
+from grenslan.server.authenticator import Authenticator, Principal
+from grenslan.server.oauth import TokenPrincipal
 from grenslan.service.context import InvocationContext
 from grenslan.service.dispatch import DispatchKind, ToolDispatcher
 
@@ -58,11 +60,11 @@ def _jsonrpc_error(code: int, message: str, data: Any = None) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "error": error}
 
 
-def _trusted(ctx: ServerRequestContext[Any, Any]) -> tuple[InvocationContext, ApplicationCredential]:
+def _trusted(ctx: ServerRequestContext[Any, Any]) -> tuple[InvocationContext, Principal]:
     request = ctx.request
     state = request.scope.get("state", {}) if request is not None else {}
     context, credential = state.get(_CONTEXT_KEY), state.get(_CREDENTIAL_KEY)
-    if not isinstance(context, InvocationContext) or not isinstance(credential, ApplicationCredential):
+    if not isinstance(context, InvocationContext) or not isinstance(credential, ApplicationCredential | TokenPrincipal):
         raise MCPError(INVALID_REQUEST, "request was not authenticated")
     return context, credential
 
@@ -74,7 +76,7 @@ def _text_summary(envelope: dict[str, Any]) -> str:
     return f"status={envelope['status']} request_id={envelope['request_id']}; the full envelope is in structuredContent"
 
 
-def build_mcp_server(registry: ToolRegistry, dispatcher: ToolDispatcher, store: CredentialStore) -> Server[Any]:
+def build_mcp_server(registry: ToolRegistry, dispatcher: ToolDispatcher, authenticator: Authenticator) -> Server[Any]:
     tools = {
         name: Tool(
             name=name,
@@ -93,7 +95,7 @@ def build_mcp_server(registry: ToolRegistry, dispatcher: ToolDispatcher, store: 
         context, credential = _trusted(ctx)
         arguments = params.arguments if params.arguments is not None else {}
         result = await run_while_authorized(
-            store, credential, lambda: dispatcher.invoke(params.name, arguments, context)
+            authenticator, credential, lambda: dispatcher.invoke(params.name, arguments, context)
         )
         if result is None:
             raise MCPError(INVALID_REQUEST, "the credential is no longer authorized")
@@ -112,9 +114,9 @@ def build_mcp_server(registry: ToolRegistry, dispatcher: ToolDispatcher, store: 
 class McpGate:
     """Admit only authenticated, current-revision POST requests to the SDK app."""
 
-    def __init__(self, sdk_app: ASGIApp, store: CredentialStore, settings: IngressSettings) -> None:
+    def __init__(self, sdk_app: ASGIApp, authenticator: Authenticator, settings: IngressSettings) -> None:
         self._sdk_app = sdk_app
-        self._store = store
+        self._authenticator = authenticator
         self._settings = settings
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -122,7 +124,7 @@ class McpGate:
             await send_json(send, 405, None, [(b"allow", b"POST")])
             return
         headers = header_values(scope)
-        authenticated = authenticate(self._store, headers)
+        authenticated = authenticate(self._authenticator, headers)
         if not isinstance(authenticated, tuple):
             await authenticated(scope, receive, send)
             return
@@ -184,10 +186,10 @@ def _replay(body: bytes, receive: Receive) -> Receive:
 
 
 def build_mcp_app(
-    registry: ToolRegistry, dispatcher: ToolDispatcher, store: CredentialStore, settings: IngressSettings
+    registry: ToolRegistry, dispatcher: ToolDispatcher, authenticator: Authenticator, settings: IngressSettings
 ) -> tuple[ASGIApp, Any]:
     """Return the gated MCP ASGI app and an async context manager for its lifespan."""
-    server = build_mcp_server(registry, dispatcher, store)
+    server = build_mcp_server(registry, dispatcher, authenticator)
     # Host and Origin are enforced for every route by the outer request gate.
     sdk_app: Starlette = server.streamable_http_app(
         stateless_http=True,
@@ -201,4 +203,4 @@ def build_mcp_app(
         async with server.session_manager.run():
             yield
 
-    return McpGate(sdk_app, store, settings), lifespan
+    return McpGate(sdk_app, authenticator, settings), lifespan

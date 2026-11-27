@@ -15,6 +15,8 @@ from grenslan.contracts.envelope import Issue, Status
 from grenslan.contracts.registry import ToolRegistry
 from grenslan.server.app import IngressSettings, create_app
 from grenslan.server.auth import ApplicationCredential, CredentialStore, token_digest
+from grenslan.server.authenticator import Authenticator
+from grenslan.server.oauth import AccessTokenValidator
 from grenslan.server.tls import server_ssl_context
 from grenslan.service.dispatch import ArgumentLimits, Invocation, ToolDispatcher, ToolOutcome
 from grenslan.service.profiles import profile_tools
@@ -97,7 +99,11 @@ class PermissionPolicy:
 
 @contextlib.asynccontextmanager
 async def running_server(
-    material: TlsMaterial, *, max_request_bytes: int = 64 * 1024, gate: asyncio.Event | None = None
+    material: TlsMaterial,
+    *,
+    max_request_bytes: int = 64 * 1024,
+    gate: asyncio.Event | None = None,
+    tokens: AccessTokenValidator | None = None,
 ) -> AsyncIterator[RunningServer]:
     registry = shared_registry()
     handler = RecordingSearch(gate=gate)
@@ -115,7 +121,9 @@ async def running_server(
         allowed_origins=frozenset({ALLOWED_ORIGIN}),
         max_request_bytes=max_request_bytes,
     )
-    app = create_app(registry=registry, dispatcher=dispatcher, credentials=store, settings=settings)
+    app = create_app(
+        registry=registry, dispatcher=dispatcher, authenticator=Authenticator(store, tokens), settings=settings
+    )
     tls = server_ssl_context(material.cert_file, material.key_file)
     config = uvicorn.Config(
         app,

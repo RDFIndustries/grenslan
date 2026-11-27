@@ -35,8 +35,9 @@ from grenslan.server.app_support import (
     send_json,
     unauthorized,
 )
-from grenslan.server.auth import CredentialStore
+from grenslan.server.authenticator import Authenticator
 from grenslan.server.mcp_endpoint import build_mcp_app
+from grenslan.server.oauth import AccessTokenValidator
 from grenslan.service.dispatch import DispatchKind, DispatchResult, ToolDispatcher
 
 __all__ = ["IngressSettings", "create_app"]
@@ -90,11 +91,11 @@ def _rest_response(result: DispatchResult) -> Response:
 
 
 def _rest_endpoint(
-    dispatcher: ToolDispatcher, store: CredentialStore, settings: IngressSettings
+    dispatcher: ToolDispatcher, authenticator: Authenticator, settings: IngressSettings
 ) -> Callable[[Request], Awaitable[Response]]:
     async def invoke_tool(request: Request) -> Response:
         headers = header_values(request.scope)
-        authenticated = authenticate(store, headers)
+        authenticated = authenticate(authenticator, headers)
         if isinstance(authenticated, Response):
             return authenticated
         credential, context = authenticated
@@ -105,12 +106,21 @@ def _rest_endpoint(
         except _BodyTooLarge:
             return error_response(413, "request_too_large")
         tool = request.path_params["tool_name"]
-        result = await run_while_authorized(store, credential, lambda: dispatcher.invoke_body(tool, body, context))
+        result = await run_while_authorized(
+            authenticator, credential, lambda: dispatcher.invoke_body(tool, body, context)
+        )
         if result is None:
-            return unauthorized()
+            return unauthorized(authenticator.challenge(token_presented=True))
         return _rest_response(result)
 
     return invoke_tool
+
+
+def _metadata_endpoint(tokens: AccessTokenValidator) -> Callable[[Request], Awaitable[Response]]:
+    async def protected_resource_metadata(_request: Request) -> Response:
+        return json_response(200, tokens.metadata())
+
+    return protected_resource_metadata
 
 
 def _host_name(value: bytes) -> str | None:
@@ -162,10 +172,10 @@ def create_app(
     *,
     registry: ToolRegistry,
     dispatcher: ToolDispatcher,
-    credentials: CredentialStore,
+    authenticator: Authenticator,
     settings: IngressSettings,
 ) -> ASGIApp:
-    mcp_app, mcp_lifespan = build_mcp_app(registry, dispatcher, credentials, settings)
+    mcp_app, mcp_lifespan = build_mcp_app(registry, dispatcher, authenticator, settings)
 
     @asynccontextmanager
     async def lifespan(_app: Starlette) -> AsyncIterator[None]:
@@ -173,7 +183,10 @@ def create_app(
             yield
 
     routes = [
-        Route("/api/v1/tools/{tool_name}", _rest_endpoint(dispatcher, credentials, settings), methods=["POST"]),
+        Route("/api/v1/tools/{tool_name}", _rest_endpoint(dispatcher, authenticator, settings), methods=["POST"]),
         Route("/mcp", mcp_app),
     ]
+    if authenticator.tokens is not None:
+        tokens = authenticator.tokens
+        routes.append(Route(tokens.metadata_path, _metadata_endpoint(tokens), methods=["GET"]))
     return RequestGate(Starlette(routes=routes, lifespan=lifespan), settings)
