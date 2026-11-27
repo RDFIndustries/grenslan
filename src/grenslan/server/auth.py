@@ -66,6 +66,8 @@ class ContextGrant(Protocol):
     def agent_id(self) -> str | None: ...
     @property
     def instance_id(self) -> str | None: ...
+    @property
+    def profile(self) -> str | None: ...
 
 
 class AuthenticationFailed(Exception):
@@ -95,6 +97,7 @@ class ApplicationCredential:
     user_id: str | None
     agent_id: str | None
     instance_id: str | None
+    profile: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.token_sha256) != hashlib.sha256().digest_size:
@@ -204,5 +207,6 @@ def establish_context(credential: ContextGrant, headers: Mapping[str, Sequence[b
     return InvocationContext(
         application_id=credential.application_id,
         permissions=credential.permissions,
+        profile=credential.profile,
         **identities,
     )

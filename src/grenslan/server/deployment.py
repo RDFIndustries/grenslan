@@ -61,6 +61,7 @@ def build_credentials(config: ServiceConfig) -> list[ApplicationCredential]:
                 user_id=identity.get("user_id"),
                 agent_id=identity.get("agent_id"),
                 instance_id=identity.get("instance_id"),
+                profile=entry.get("profile"),
             )
         )
     return credentials

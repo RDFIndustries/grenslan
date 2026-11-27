@@ -47,11 +47,14 @@ from grenslan.server.deployment import (
     security_log,
 )
 from grenslan.server.tls import server_ssl_context
+from grenslan.service.capabilities import CapabilitiesHandler, public_limits
 from grenslan.service.context import InvocationContext
 from grenslan.service.dispatch import ToolDispatcher
 
 DEFAULT_SERVICE_CONFIG = Path("/etc/grenslan/service.yaml")
 DEFAULT_PROVIDER_CONFIG = Path("/etc/grenslan/providers.yaml")
+# Every implemented tool and the provider capabilities it needs; capabilities_get reports from this.
+TOOL_REQUIREMENTS: dict[str, tuple[str, ...]] = {"capabilities_get": ()}
 
 
 class GrantedPermissions:
@@ -122,11 +125,23 @@ async def run_service(
     service = validated.service
     providers = await ProviderSet.start(validated.providers, implementations)
     try:
+        profile = exposure_profile(service)
+        capabilities = CapabilitiesHandler(
+            registry=tools,
+            providers=providers,
+            requirements=TOOL_REQUIREMENTS,
+            profile_name=service.data["tools"]["profile"],
+            profile=profile,
+            limits=public_limits(validated.providers),
+        )
+        handlers = {"capabilities_get": capabilities}
+        if set(handlers) != set(TOOL_REQUIREMENTS):
+            raise RuntimeError("every implemented tool must declare its provider requirements")
         dispatcher = ToolDispatcher(
             tools,
-            handlers={},
+            handlers=handlers,
             policy=GrantedPermissions(),
-            profile=exposure_profile(service),
+            profile=profile,
             max_request_bytes=service.data["ingress"]["max_request_bytes"],
             argument_limits=argument_limits(service),
         )

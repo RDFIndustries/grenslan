@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import signal
 import socket
@@ -130,3 +131,29 @@ async def test_failed_provider_does_not_stop_startup_and_is_shut_down(tmp_path: 
         assert await search(client, QOR_TOKEN) == 200
     assert fixtures.calls["broken"].shut_down == 1
     assert fixtures.calls["primary"].shut_down == 1
+
+
+async def capabilities(client: httpx2.AsyncClient, token: str) -> dict[str, Any]:
+    response = await client.post(
+        "/api/v1/tools/capabilities_get", json={}, headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    body: dict[str, Any] = response.json()
+    assert body["status"] == "completed"
+    return dict(body["result"])
+
+
+async def test_capabilities_reflect_the_credential_and_configuration(tmp_path: Path) -> None:
+    deployment = Deployment(tmp_path, FixtureSet(), ("primary",))
+    async with deployment.running() as client:
+        qor = await capabilities(client, QOR_TOKEN)
+        zygos = await capabilities(client, ZYGOS_TOKEN)
+    assert qor["profile"] == "full"
+    assert {entry["name"]: entry["status"] for entry in qor["capabilities"]} == {
+        "capabilities_get": "enabled",
+        "web_search": "unsupported",
+        "image_search": "unsupported",
+    }
+    assert zygos["profile"] == "search_only"
+    assert {entry["name"] for entry in zygos["capabilities"]} == {"capabilities_get", "web_search", "image_search"}
+    assert "primary" not in json.dumps(qor)

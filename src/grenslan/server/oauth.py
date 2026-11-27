@@ -215,6 +215,7 @@ class TokenPrincipal:
     delegation: bool = False
     agent_id: str | None = None
     instance_id: str | None = None
+    profile: str | None = None
 
 
 class AccessTokenValidator:

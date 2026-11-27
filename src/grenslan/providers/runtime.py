@@ -188,6 +188,14 @@ class ProviderSet:
             if self._serves(self._instances[provider_id], capability)
         )
 
+    def declaring(self, family: Family, capability: str) -> tuple[str, ...]:
+        """Enabled instances whose declaration includes ``capability``, whatever their state, in route order."""
+        return tuple(
+            provider_id
+            for provider_id in self._routes.get(family, ())
+            if self._declares(self._instances[provider_id], capability)
+        )
+
     def provider(self, provider_id: str) -> Any:
         """The instance itself, only while it is ready or degraded."""
         instance = self._instances.get(provider_id)
@@ -196,7 +204,11 @@ class ProviderSet:
         return instance.provider
 
     @staticmethod
-    def _serves(instance: _Instance, capability: str) -> bool:
-        if instance.health.state not in _SERVING or instance.description is None:
+    def _declares(instance: _Instance, capability: str) -> bool:
+        if instance.description is None:
             return False
         return any(declaration.capability == capability for declaration in instance.description.capabilities)
+
+    @classmethod
+    def _serves(cls, instance: _Instance, capability: str) -> bool:
+        return instance.health.state in _SERVING and cls._declares(instance, capability)

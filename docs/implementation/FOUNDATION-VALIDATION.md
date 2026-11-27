@@ -528,12 +528,21 @@ Service configuration and commands:
 
 Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 963 tests: 47 cover service configuration and overrides, 21 deployment and reload, 7 the commands, and 6 integration tests run the configured service over HTTPS. Those 6 cover authentication, a real `SIGHUP` revoking one credential while another keeps working, startup stopped before binding by invalid configuration, an unknown variable or a provider declaration mismatch, and a failed provider not stopping startup and still being shut down. Mutation checks: removing profile narrowing, the credential replacement on reload, strict key-set parsing, the unknown-variable check, the resource-host check, digest uniqueness, the default-port origin check or the profile-shadowing check each fails the tests. One mutation survived because a condition in the reload was redundant; it was removed. Each mutation was reverted.
 
+Capability discovery:
+
+| Component | Behaviour | Basis |
+|---|---|---|
+| `service/capabilities.py` | `capabilities_get` lists each tool in the service profile and the caller's permissions: `unsupported` if not implemented; otherwise `enabled` when every provider capability it needs has a `ready` or `degraded` instance, `unavailable` when enabled instances declare it but none is serving, `disabled` when no enabled instance declares it. Enabled entries carry the serving declarations' formats and limitations, plus a fixed limitation when a serving instance is degraded. Tools the caller cannot see are omitted; requested by name they are `disabled` with no detail, and unknown names `unsupported`. The profile reported is the credential's profile if it has one, otherwise the service profile. Limits are the global output, download, timeout and concurrency limits. Provider identities, endpoints and health details are never reported. | TC-042, TC-043, PC-010, PC-064, AD-416 |
+| `server/runner.py` | Every implemented tool declares the provider capabilities it needs in one table, which `capabilities_get` reports from; startup fails if a handler has no entry. | PC-064 |
+| Credential and context | A credential's profile name is carried into the trusted invocation context; a change to it is a grant change, so reload treats it as revocation. | TC-043, D3 |
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 979 tests; 15 unit tests and one integration test cover capability discovery. Mutation checks: dropping the permission or the profile filter, reporting hidden requested tools in full, collapsing `unavailable` into `disabled`, ignoring the credential profile, counting non-serving instances as eligible, or dropping the degraded limitation each fails the tests. Each mutation was reverted.
+
 Limitations:
-- The production service has no tool handlers yet: permitted tools return `unsupported_capability` until `capabilities_get` (below) and search (F05, F06) are wired in.
+- The production service implements only `capabilities_get`; other permitted tools return `unsupported_capability` until search (F05, F06) and later work packages are wired in.
 - Provider health is refreshed only on demand. The configuration defines no refresh interval, and none is invented.
 - Reload reads small, size-bounded files on the event loop.
 
 Remaining for F04:
-- Effective capability projection for `capabilities_get`, and safe profile discovery.
-- Extension documentation for operator-installed implementations.
+- Dependency manifest, platform and integrity validation at registration, and extension documentation (PC-004, PC-056 and the registry requirements of the Provider Contract; gate F-G15, T-433, T-459). The adopted contracts require these but do not define the manifest format, platform vocabulary, verification method or installation route, so a specification is drafted for maintainer approval in `docs/implementation/PROVIDER-REGISTRATION.md`.
 
