@@ -1,6 +1,6 @@
 # Bundled SearXNG: outbound enforcement and process design
 
-**Status:** Option A and decisions S1–S6 approved by the maintainer, 2026-11-27 (S5: keep the external instance as an operator option). Tracker-URL removal (Section 4) is proposed and open.
+**Status:** Option A and decisions S1–S6 approved by the maintainer, 2026-11-27 (S5: keep the external instance as an operator option). Tracker-URL removal decisions T1–T5 (Section 4) approved by the maintainer, 2026-11-27.
 **Scope:** How the bundled SearXNG process is confined so that its outbound traffic obeys Grenslan's destination and disclosure policy, and how Grenslan configures and reaches it.
 **Authority:** AD-423 (single primary container bundling SearXNG as a separately managed internal process; endpoint not exposed; no separate container mandatory), AD-370, the deployment decision requiring nonprivileged operation and no host socket, the configuration decision requiring that outbound SearXNG queries comply with provider and disclosure policy, AGENTS.md §4–5 (no runtime downloads; outbound restrictions enforced independently of the component); PRP-001 F05, gates F-G13, F-G14, F-G17.
 
@@ -48,7 +48,7 @@ Consequence: configuration alone can make SearXNG well-behaved, but cannot enfor
 
 Implementation can start now, before these decisions, on the parts every option needs: the in-process connection-level enforcement (from the egress spike), the egress proxy, and the SearXNG search adapter against a fixture server.
 
-## 4. Tracker-URL removal (proposed, decisions T1–T5)
+## 4. Tracker-URL removal (decisions T1–T5)
 
 The maintainer wants tracker removal kept, with bundled rules. SearXNG's plugin instead downloads the ClearURLs rules at every start, which AGENTS.md §4 rules out and which fails in restricted deployments. The rules change every one to two weeks, so shipping them and updating them are separated:
 
