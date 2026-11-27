@@ -8,7 +8,7 @@
 | Public contract | 1.0, TC-001–057 |
 | Provider contract | 1.0, PC-001–066 |
 | PRP-001 | Adopted by maintainer, 2026-11-26 |
-| Preflight status | In progress; repository readiness and contract checks complete in development workspace; other rows open |
+| Preflight status | In progress. Complete: repository, contracts, resolver and lock, MCP ingress gate, in-process egress mechanism, provider interfaces, package bootstrap. Open: SearXNG build, server and egress design; container; config parser; MCP authorization profile and cancellation; security advisories |
 | Runtime acceptance | 0 of 120 executed |
 
 ## 1. What has been verified
@@ -252,7 +252,71 @@ uv and uv_build are dual-licensed MIT OR Apache-2.0 per PyPI metadata.
 
 The MCP SDK brings `httpx2`/`httpcore2` 2.16.2. Adding `httpx` 0.29.0 for discovery would put two parallel HTTP client stacks in the runtime. `httpx2` is the leading candidate for discovery transport because it is already a required dependency. The deciding test is the outbound-enforcement spike: the transport must allow Grenslan to control and verify the actual connection target (resolved-address pinning, redirect and DNS-change handling, TLS verification and credential scoping). Until that test passes, neither stack is selected for discovery traffic.
 
-### 4.8 Selected and proposed foundation choices
+### 4.8 Outbound enforcement spike
+
+A disposable spike is kept in `docs/implementation/preflight/egress/`. `egress_spike.py` implements an `httpcore2.AsyncNetworkBackend` (`PolicyBackend`) that receives every outbound TCP connection the pool makes. For each one it:
+
+1. resolves the hostname once through a substitutable resolver;
+2. rejects the name if **any** resolved address is prohibited, so a mixed public/private answer cannot be used to reach a private address;
+3. connects to the checked IP literal through the public `httpcore2.AnyIOBackend`, so no second resolution happens between check and connect;
+4. reads the connected socket's peer address and closes the connection if it differs from the checked target.
+
+The address policy denies multicast, every address for which Python's `ipaddress` `is_global` is false, and the cloud metadata addresses `169.254.169.254` and `fd00:ec2::254`. For IPv6 it also extracts IPv4 addresses embedded through IPv4-mapped, NAT64 (`64:ff9b::/96`), 6to4 and Teredo forms and applies the same policy to them. This is required: Python 3.12 classifies `64:ff9b::7f00:1`, which embeds `127.0.0.1`, as global. Approved non-global destinations are explicit `(address, port)` scoped exceptions. Redirects are not followed by the pool. A Grenslan-side loop re-applies scheme and destination checks on every hop and sends a credential only when the request origin equals the credential's origin.
+
+Command, from the repository root:
+
+```shell
+docs/implementation/preflight/egress/run.sh <venv>/bin/python
+```
+
+Executed 2026-11-26T22:42:51-08:00. Exit status 0, 20 of 20 checks passed:
+
+| Check | Observed |
+|---|---|
+| 21 hostile address classes (RFC 1918, CGNAT, loopback, link-local, metadata, unspecified, broadcast, multicast, IPv6 loopback/unspecified/link-local/ULA, IPv4-mapped loopback and metadata, NAT64-embedded loopback and metadata, 6to4- and Teredo-embedded addresses, AWS IPv6 metadata, benchmarking range) | All denied |
+| Public example address | Permitted by policy (no connection made) |
+| `127.1`, `2130706433`, `0x7f000001`, `0177.0.0.1`, `localhost` | Each denied on its resolved address `127.0.0.1` |
+| Scoped loopback fixture exception | Reachable on the approved port only; another port on the same address denied |
+| Resolver answering one public and one loopback address | Name rejected; no connection attempted |
+| Resolver whose answer changes after the first lookup | One resolution; connection pinned to the checked address |
+| Redirect from an allowed fixture to `169.254.169.254` | Denied before connecting |
+| Cross-origin redirect from the HTTP fixture to the HTTPS fixture | Followed under policy; bearer credential sent on the first hop only, absent on the second (server-side observation) |
+| Pinned connection with a certificate valid for the requested hostname | Accepted |
+| Pinned connection where the certificate does not match the requested hostname | Rejected, `CERTIFICATE_VERIFY_FAILED: Hostname mismatch` |
+| Default trust store against the private test CA | Rejected |
+| `file://` URL | Denied before any connection |
+
+Findings:
+
+- `httpcore2` alone provides the needed control point through its public `network_backend` parameter. `httpx2.AsyncHTTPTransport` does not expose `network_backend`, so the discovery client should use `httpcore2` directly, or a Grenslan transport built on it, rather than `httpx2` or `httpx`. This resolves Section 4.7 in favour of not adding `httpx`.
+- `httpcore2` does not read proxy environment variables, so an environment `HTTP_PROXY` cannot silently route traffic around the policy.
+- **Open design gap:** this enforcement runs inside the Grenslan process. It cannot govern outbound traffic that SearXNG, a separately supervised process, makes to its upstream engines, which PRP-001 F05 and AD requirements on outbound destination enforcement require. Candidate designs, which need validation and maintainer review: (a) configure SearXNG's outgoing requests to use a Grenslan-operated local egress proxy that applies the same policy, combined with an operating-system or container-network rule that prevents the SearXNG process from connecting anywhere else; (b) a container network policy alone. SearXNG documents `outgoing.proxies` (https://docs.searxng.org/admin/settings/settings_outgoing.html, read 2026-11-26), with `all://` routing to HTTP, HTTPS, SOCKS4, SOCKS5 or `socks5h` proxies; with `socks5h` the proxy performs name resolution, so a Grenslan `socks5h` egress proxy could apply the same `PolicyBackend` checks. The same page shows SearXNG's outgoing client is based on `curl_cffi`. Proxy settings are cooperative, so option (a) still needs an enforced restriction on the SearXNG process's direct egress; a non-privileged way to apply one inside the primary container has not been verified.
+
+Scope: loopback fixtures and substitute resolvers only; no external network traffic, browser or worker traffic. Not F-G13 or F-G14 evidence.
+
+### 4.9 Discovery provider interfaces
+
+Primary-source verification of SearXNG and the five specialized providers, performed 2026-11-26, is recorded in `docs/implementation/preflight/PROVIDER-APIS.md`, with each fact tagged as documented, read from published source, observed in one anonymous live call, or inferred, and with source URLs. No credential, email address or other identifying value was sent to any provider. Summary of facts that shape adapter design:
+
+| Provider | Endpoint and version | Paging limits | Rate limits and credentials | Notice or licence obligations |
+|---|---|---|---|---|
+| SearXNG | `/search?format=json`; images tagged `YYYY.MM.DD-<commit>`, no git tags or releases | `pageno` | JSON format disabled by default (403 until enabled in `search.formats`); limiter off by default and needs Valkey if enabled | AGPL-3.0; corresponding source at the image's commit |
+| arXiv | `https://export.arxiv.org/api/query`, unversioned | 2000 per call, 30000 total | 1 request per 3 s, single connection, across all operator machines; no key | Metadata CC0; e-prints may not be stored and served without permission; acknowledgement statement requested |
+| Crossref | `https://api.crossref.org/works`, live spec 4.11.3 | `rows` ≤ 1000, `offset` ≤ 10000, cursors expire after 5 min idle | Public lists 1/s, concurrency 1; polite (`mailto`) 3/s, concurrency 3 | Metadata largely uncopyrightable; abstracts may be copyrighted |
+| PubMed (E-utilities) | `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/` | ESearch returns only the first 10000 PubMed records per query | 3/s without key, 10/s with `api_key`; `tool` and `email` must be registered with NCBI | NCBI disclaimer must be evident to users; abstracts may be copyrighted |
+| OpenAlex | `https://api.openalex.org/works`, unversioned path with tracked deprecations | `per_page` ≤ 100; page × per_page ≤ 10000; cursor beyond first page needs a key | Daily USD budget: $0.10 keyless, $1 with free key; search costs $0.001; 10/s keyless, 30/s with key; `Retry-After` on 429; polite pool and `mailto` withdrawn in 2026 | CC0 |
+| GitHub | `https://api.github.com/search/*`, `X-GitHub-Api-Version: 2026-03-10` (requests without it default to `2022-11-28`) | 1000 results per search, `per_page` ≤ 100 | `User-Agent` required; search 30/min authenticated, 10/min unauthenticated; code search requires a token; `retry-after` / `x-ratelimit-reset` on secondary limits | Repository content licensed per repository; API terms not yet read |
+
+Items needing maintainer review before the dependent adapter work:
+
+1. SearXNG application server for a plain supervised process: Granian is described as the future replacement for uWSGI but is "only officially supported in the Installation container"; uWSGI remains the documented non-container path.
+2. OpenAlex `relevance_score` includes a capped citation-count boost, and `rerank=true` applies a model. Under AGENTS.md Section 2 ranking rules, the proposed handling is to preserve and label the provider's own order, never enable `rerank`, and apply no Grenslan-side popularity weighting. SearXNG engine `weight` values are likewise left at their default of 1.
+3. Operator-level provider identities and keys (Crossref `mailto`, NCBI `tool`/`email`/`api_key`, OpenAlex and GitHub keys) are optional configuration and never derived from consumer identity. OpenAlex without a key cannot follow cursors, and GitHub code search is unavailable without a token; both must be reported as limitations, not empty results.
+4. Whether arXiv e-prints may be cached or delivered to consumers affects later retrieval and artifact milestones; it is a licensing question outside PRP-001 discovery scope.
+
+Unverified items are listed at the end of `PROVIDER-APIS.md` and remain open.
+
+### 4.10 Selected and proposed foundation choices
 
 | Choice | Status | Basis |
 |---|---|---|
@@ -263,10 +327,31 @@ The MCP SDK brings `httpx2`/`httpcore2` 2.16.2. Adding `httpx` 0.29.0 for discov
 | Low-level `mcp.server.Server` behind a Grenslan modern-only ingress gate | Selected | Sections 4.4–4.5 |
 | uvicorn 0.54.0, direct TLS, minimum TLS 1.2 | Selected | Section 4.5; already a required SDK dependency |
 | Starlette (required by the SDK) for the REST route instead of adding FastAPI | **Proposed, needs maintainer review** | PRP-001 names FastAPI/ASGI as reference candidates. The foundation REST surface is one `POST /api/v1/tools/{tool_name}` route validated against the canonical registry with jsonschema; FastAPI's model-driven validation and OpenAPI generation would duplicate that and add a dependency. AGENTS.md Section 4 discourages frameworks added for anticipated features |
-| jsonschema 4.26.0 with format checking as the wire validator | Selected | Section 3; SDK already depends on it |
-| Discovery HTTP client | Open | Section 4.7 |
+| jsonschema 4.26.0 with the `format-nongpl` extra as the wire validator | Selected | Sections 3 and 4.11; SDK already depends on jsonschema |
+| Discovery HTTP client: `httpcore2` (already required by the SDK) with a Grenslan policy network backend; no `httpx` | Selected, pending the SearXNG egress design | Section 4.8 |
 
-### 4.9 Knowledge-base coverage
+### 4.11 Package bootstrap
+
+The repository now has `pyproject.toml` (src layout, `uv_build` backend, exact direct pins, `[tool.uv] required-version = ">=0.13.10,<0.14"`), `uv.lock`, the `grenslan` package containing only its version, `tests/unit/test_contract_registry.py`, `.github/workflows/ci.yml` (actions pinned to commit SHAs: `actions/checkout` v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`, `astral-sh/setup-uv` v10.4.0 `1db35dd8eee11c5894872e0b383ae6c406cf738d`), `docs/implementation/DEVELOPMENT.md` and `docs/implementation/DEPENDENCIES.md`.
+
+Direct runtime pins: `mcp==2.3.0`, `mcp-types==2.3.0`, `starlette==1.10.0`, `uvicorn==0.54.0`, `httpcore2==2.16.2`, `anyio==4.16.0`, `jsonschema[format-nongpl]==4.26.0`. Dev pins: `pytest==9.2.0`, `pytest-asyncio==1.5.0`, `ruff==0.17.6`, `mypy==2.4.1`, `types-jsonschema==4.26.0.20261006`. PyYAML is deliberately not yet a dependency; the configuration parser choice is still open.
+
+Licence finding: `jsonschema[format]` depends on `rfc3987`, declared GPL-3.0-or-later. The `format-nongpl` extra replaces it with MIT and Apache-2.0 validators and is used instead. The preflight script in Section 3 was run with the `format` extra in a throwaway environment only. The installed set contains no GPL-family licence; `fqdn` (runtime) and `pathspec` (dev) are MPL-2.0. Details are in `DEPENDENCIES.md`.
+
+Clean-environment reproduction, executed 2026-11-26T22:46:34-08:00: the files git would commit were copied into an empty directory and installed with uv 0.13.10 using an **empty** uv cache.
+
+| Step | Command | Result |
+|---|---|---|
+| Install | `uv sync --locked` | PASS |
+| Lint | `uv run --locked ruff check` | PASS |
+| Format | `uv run --locked ruff format --check` | PASS |
+| Type check | `uv run --locked mypy` | PASS, no issues in 2 source files |
+| Tests | `uv run --locked pytest` | PASS, 69 passed |
+| Offline reinstall | delete `.venv`; `uv sync --frozen --offline`; `uv run --frozen --offline pytest` | PASS, 69 passed |
+
+The 69 tests check the adopted contract files: Draft 2020-12 dialect, 32 tools, 64 projected object schemas valid against the meta-schema, rejection of a caller-supplied `application_id`, `uri` format checking available without the GPL extra, and the provider configuration schema. They are not service tests. The CI workflow has not yet run on GitHub; the host's global uv (0.8.8) is older than `required-version` and was not changed.
+
+### 4.12 Knowledge-base coverage
 
 The local research knowledge base contains SearXNG, Crossref REST API and arXiv API documentation. It does not contain the MCP specification, the MCP Python SDK, PubMed E-utilities, OpenAlex or the GitHub REST search API. Adding those sources was attempted on 2026-11-26 and did not complete because the knowledge-base service could not reach its local embedding provider. Verification of those sources used the primary URLs directly.
 
@@ -275,13 +360,13 @@ The local research knowledge base contains SearXNG, Crossref REST API and arXiv 
 | Work | Next evidence |
 |---|---|
 | Repository readiness | Complete (Section 4.1). |
-| Python and resolver | Selected (Sections 4.6, 4.8). ARM64 image compatibility and full transitive license and security inventory remain open. |
+| Python and resolver | Selected and bootstrapped (Sections 4.6, 4.10, 4.11). ARM64 compatibility and security advisory review remain open. |
 | MCP SDK / ingress spike | Gate validated (Section 4.5); SDK and types selected (Section 4.8). Request cancellation, MCP authorization profile and release security advisories remain for F03. |
 | TLS and identity | Direct TLS with private test CA validated for MCP (Section 4.5). REST, delegation headers and certificate replacement remain for F03. |
 | Provider config | Safe parser and cross-field scope/registry checks with sanitized fixtures. |
-| Outbound enforcement | Demonstrate actual resolved connection, redirect, DNS and credential policies; negative fixtures. |
-| SearXNG | Verify official interface, pin compatible approved build, terms/license/source availability, internal process isolation and upstream policy. |
-| Specialized providers | Check official API docs/version, credentials, query/filters/pagination/limits and terms for all five adapters; fixtures and approved smoke queries. |
+| Outbound enforcement | In-process mechanism validated (Section 4.8). SearXNG upstream egress control is an open design gap needing validation and maintainer review. |
+| SearXNG | Interface, distribution, licence and outgoing-proxy support verified (Sections 4.8–4.9). Select and pin a build, decide the application server, and validate process isolation and upstream egress control. |
+| Specialized providers | Official interfaces verified (Section 4.9); unverified items listed in `PROVIDER-APIS.md`. Fixtures and approved smoke queries remain for F06. |
 | Execution and resource defaults | Measure and document effective limits, concurrency, bounded operation/cancellation and no unapproved telemetry. |
 | Container availability | Docker/WSL2 or appropriate Linux environment, nonprivileged protected endpoint proof; platform constraints remain explicit. |
 

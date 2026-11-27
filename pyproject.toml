@@ -1,0 +1,72 @@
+[project]
+name = "grenslan"
+version = "0.1.0.dev0"
+description = "Self-hosted research service providing attributable discovery, retrieval and processing over MCP and REST."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "RDF Industries, Inc." }]
+requires-python = ">=3.12,<3.13"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+# Direct runtime dependencies are pinned exactly; versions and licences are
+# recorded in docs/implementation/FOUNDATION-VALIDATION.md. Transitive pins
+# live in uv.lock.
+dependencies = [
+    "mcp==2.3.0",
+    "mcp-types==2.3.0",
+    "starlette==1.10.0",
+    "uvicorn==0.54.0",
+    "httpcore2==2.16.2",
+    "anyio==4.16.0",
+    # format-nongpl avoids the GPL-licensed rfc3987 pulled in by the "format" extra.
+    "jsonschema[format-nongpl]==4.26.0",
+]
+
+[project.urls]
+Source = "https://github.com/RDFIndustries/grenslan"
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+    "ruff==0.17.6",
+    "mypy==2.4.1",
+    "types-jsonschema==4.26.0.20261006",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.10,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.13.10,<0.14"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+xfail_strict = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+# docs/ holds adopted declaration files and disposable preflight scripts, not package code.
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "PT", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
