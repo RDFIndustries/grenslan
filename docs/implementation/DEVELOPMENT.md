@@ -25,14 +25,13 @@ Direct dependencies are pinned exactly in `pyproject.toml`. To change one, edit 
 
 ## Checks
 
-These are the same commands the CI workflow (`.github/workflows/ci.yml`) runs:
+Run all checks before committing:
 
 ```shell
-uv run --locked ruff check
-uv run --locked ruff format --check
-uv run --locked mypy
-uv run --locked pytest
+scripts/check.sh
 ```
+
+It verifies the lock (`uv sync --locked`), then runs `ruff check`, `ruff format --check`, `mypy` and `pytest`, stopping at the first failure. Extra arguments are passed to pytest, for example `scripts/check.sh -k registry`. The repository has no hosted CI workflow; any CI system can run the same script.
 
 Ruff and mypy cover `src/` and `tests/`. `docs/` is excluded from linting because it holds the adopted declaration file `docs/contracts/PROVIDER_INTERFACES.py` and disposable preflight scripts, which are not package code.
 
@@ -41,8 +40,10 @@ Ruff and mypy cover `src/` and `tests/`. `docs/` is excluded from linting becaus
 | Path | Contents |
 |---|---|
 | `src/grenslan/` | The `grenslan` package. Components are added as their work packages are implemented; there are no placeholder modules. |
-| `tests/unit/` | Unit tests. `test_contract_registry.py` checks the integrity of the adopted contract files. |
-| `docs/contracts/` | Authoritative adopted contracts and schemas. Runtime code reads or derives from these; it does not keep divergent copies. |
+| `tests/unit/` | Unit tests, grouped by package area. `contracts/test_adopted_contract_files.py` checks the integrity of the adopted contract files. |
+| `tests/support/` | Shared test fixtures, importable from any test. |
+| `scripts/` | `check.sh` (all checks) and `sync-contracts.sh` (copies the adopted tool registry into the package). |
+| `docs/contracts/` | Authoritative adopted contracts and schemas. Runtime code reads or derives from these. The one packaged copy, `src/grenslan/contracts/TOOL_SCHEMAS.json`, must stay byte-identical; a test fails if it diverges, and `scripts/sync-contracts.sh` refreshes it. |
 | `docs/implementation/` | Validation record, dependency inventory, this file, and reproducible preflight scripts under `preflight/`. |
 
 ## Secrets and test material

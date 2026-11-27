@@ -332,7 +332,7 @@ Unverified items are listed at the end of `PROVIDER-APIS.md` and remain open.
 
 ### 4.11 Package bootstrap
 
-The repository now has `pyproject.toml` (src layout, `uv_build` backend, exact direct pins, `[tool.uv] required-version = ">=0.13.10,<0.14"`), `uv.lock`, the `grenslan` package containing only its version, `tests/unit/test_contract_registry.py`, `.github/workflows/ci.yml` (actions pinned to commit SHAs: `actions/checkout` v7.0.1 `3d3c42e5aac5ba805825da76410c181273ba90b1`, `astral-sh/setup-uv` v10.4.0 `1db35dd8eee11c5894872e0b383ae6c406cf738d`), `docs/implementation/DEVELOPMENT.md` and `docs/implementation/DEPENDENCIES.md`.
+The repository now has `pyproject.toml` (src layout, `uv_build` backend, exact direct pins, `[tool.uv] required-version = ">=0.13.10,<0.14"`), `uv.lock`, the `grenslan` package containing only its version, `tests/unit/test_contract_registry.py` (since moved to `tests/unit/contracts/test_adopted_contract_files.py`), `scripts/check.sh`, `docs/implementation/DEVELOPMENT.md` and `docs/implementation/DEPENDENCIES.md`.
 
 Direct runtime pins: `mcp==2.3.0`, `mcp-types==2.3.0`, `starlette==1.10.0`, `uvicorn==0.54.0`, `httpcore2==2.16.2`, `anyio==4.16.0`, `jsonschema[format-nongpl]==4.26.0`. Dev pins: `pytest==9.2.0`, `pytest-asyncio==1.5.0`, `ruff==0.17.6`, `mypy==2.4.1`, `types-jsonschema==4.26.0.20261006`. PyYAML is deliberately not yet a dependency; the configuration parser choice is still open.
 
@@ -349,7 +349,7 @@ Clean-environment reproduction, executed 2026-11-26T22:46:34-08:00: the files gi
 | Tests | `uv run --locked pytest` | PASS, 69 passed |
 | Offline reinstall | delete `.venv`; `uv sync --frozen --offline`; `uv run --frozen --offline pytest` | PASS, 69 passed |
 
-The 69 tests check the adopted contract files: Draft 2020-12 dialect, 32 tools, 64 projected object schemas valid against the meta-schema, rejection of a caller-supplied `application_id`, `uri` format checking available without the GPL extra, and the provider configuration schema. They are not service tests. The CI workflow has not yet run on GitHub; the host's global uv (0.8.8) is older than `required-version` and was not changed.
+The 69 tests check the adopted contract files: Draft 2020-12 dialect, 32 tools, 64 projected object schemas valid against the meta-schema, rejection of a caller-supplied `application_id`, `uri` format checking available without the GPL extra, and the provider configuration schema. They are not service tests. The maintainer chose not to use hosted CI workflows; `scripts/check.sh` runs the same checks locally and can be invoked by any CI system. The host's global uv was later upgraded to 0.13.10 by the maintainer.
 
 ### 4.12 Knowledge-base coverage
 
