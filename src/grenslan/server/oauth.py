@@ -55,10 +55,33 @@ _WELL_KNOWN = "/.well-known/oauth-protected-resource"
 
 
 class InvalidAccessToken(Exception):
-    """Any token rejection. The message never says which check failed."""
+    """Any token rejection.
 
-    def __init__(self) -> None:
+    The message never says which check failed; ``reason`` says so for operator
+    diagnostics only and must not be returned to the client.
+    """
+
+    def __init__(self, reason: str) -> None:
         super().__init__("invalid access token")
+        self.reason = reason
+
+
+_REASON_BY_ERROR: tuple[tuple[type[PyJWTError], str], ...] = (
+    (jwt.ExpiredSignatureError, "expired"),
+    (jwt.ImmatureSignatureError, "not_yet_valid"),
+    (jwt.InvalidAudienceError, "audience"),
+    (jwt.InvalidIssuerError, "issuer"),
+    (jwt.MissingRequiredClaimError, "missing_claim"),
+    (jwt.InvalidSignatureError, "signature"),
+    (jwt.DecodeError, "malformed"),
+)
+
+
+def _reason(error: Exception) -> str:
+    for error_type, reason in _REASON_BY_ERROR:
+        if isinstance(error, error_type):
+            return reason
+    return "invalid"
 
 
 def _require_https_url(value: str, what: str) -> None:
@@ -265,29 +288,29 @@ class AccessTokenValidator:
     def validate(self, token: str, *, now: float | None = None) -> TokenPrincipal:
         try:
             return self._validate(token, now)
-        except (PyJWTError, ValueError, TypeError, KeyError):
-            raise InvalidAccessToken from None
+        except (PyJWTError, ValueError, TypeError, KeyError) as error:
+            raise InvalidAccessToken(_reason(error)) from None
 
     def _validate(self, token: str, now: float | None) -> TokenPrincipal:
         if len(token) > MAX_TOKEN_BYTES or not _TOKEN_SHAPE.match(token):
-            raise InvalidAccessToken
+            raise InvalidAccessToken("malformed")
         header = jwt.get_unverified_header(token)
         algorithm = header.get("alg")
         if algorithm not in _ALGORITHM_BY_KEY_TYPE.values() or _FORBIDDEN_HEADERS & header.keys():
-            raise InvalidAccessToken
+            raise InvalidAccessToken("header")
         token_type = header.get("typ")
         if token_type is not None and (not isinstance(token_type, str) or token_type.lower() not in _ACCEPTED_TYPES):
-            raise InvalidAccessToken
+            raise InvalidAccessToken("header")
 
         unverified = jwt.decode(token, options={"verify_signature": False})
         issuer_id = unverified.get("iss")
         with self._lock:
             issuer = self._issuers.get(issuer_id) if isinstance(issuer_id, str) else None
         if issuer is None:
-            raise InvalidAccessToken
+            raise InvalidAccessToken("unknown_issuer")
         key = issuer.key_for(header.get("kid"))
         if key is None or key.algorithm != algorithm:
-            raise InvalidAccessToken
+            raise InvalidAccessToken("unknown_key")
 
         options: dict[str, Any] = {"require": _REQUIRED_CLAIMS}
         claims = jwt.decode(
@@ -303,11 +326,11 @@ class AccessTokenValidator:
         current = now if now is not None else time.time()
         maximum = self.policy.max_lifetime_seconds
         if expires_at - issued_at > maximum or expires_at - current > maximum + self.policy.leeway_seconds:
-            raise InvalidAccessToken
+            raise InvalidAccessToken("lifetime")
 
         scope = claims.get("scope", "")
         if not isinstance(scope, str):
-            raise InvalidAccessToken
+            raise InvalidAccessToken("scope")
         permissions = frozenset(
             tool for granted in scope.split() for tool in issuer.scope_permissions.get(granted, frozenset())
         )
@@ -316,7 +339,7 @@ class AccessTokenValidator:
         if issuer.user_claim is not None:
             user_id = claims.get(issuer.user_claim)
             if not isinstance(user_id, str) or not IDENTITY_PATTERN.match(user_id):
-                raise InvalidAccessToken
+                raise InvalidAccessToken("user_claim")
 
         return TokenPrincipal(
             application_id=issuer.application_id,

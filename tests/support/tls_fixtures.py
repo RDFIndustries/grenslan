@@ -31,8 +31,19 @@ def _name(common_name: str) -> x509.Name:
     return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
 
 
-def make_tls_material(directory: Path, *, hostnames: tuple[str, ...] = ("localhost",)) -> TlsMaterial:
+def make_tls_material(
+    directory: Path, *, hostnames: tuple[str, ...] = ("localhost",), expired: bool = False
+) -> TlsMaterial:
+    """Write a CA, a server certificate for ``hostnames`` and 127.0.0.1, and its key.
+
+    ``expired`` makes the server certificate's validity end an hour ago.
+    """
     now = datetime.datetime.now(datetime.UTC)
+    server_validity = (
+        (now - datetime.timedelta(hours=2), now - datetime.timedelta(hours=1))
+        if expired
+        else (now - datetime.timedelta(minutes=5), now + datetime.timedelta(hours=1))
+    )
     ca_key = ec.generate_private_key(ec.SECP256R1())
     ca_cert = (
         x509.CertificateBuilder()
@@ -61,8 +72,8 @@ def make_tls_material(directory: Path, *, hostnames: tuple[str, ...] = ("localho
         .issuer_name(ca_cert.subject)
         .public_key(server_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=5))
-        .not_valid_after(now + datetime.timedelta(hours=1))
+        .not_valid_before(server_validity[0])
+        .not_valid_after(server_validity[1])
         .add_extension(x509.SubjectAlternativeName(alt_names), critical=False)
         .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)

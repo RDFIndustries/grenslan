@@ -36,10 +36,19 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from grenslan import __version__
 from grenslan.contracts.envelope import FAILURE_STATUSES
 from grenslan.contracts.registry import ToolRegistry
-from grenslan.server.app_support import IngressSettings, authenticate, header_values, run_while_authorized, send_json
+from grenslan.server.app_support import (
+    IngressSettings,
+    RequestAudit,
+    authenticate,
+    header_values,
+    record_refusal,
+    run_while_authorized,
+    send_json,
+)
 from grenslan.server.auth import ApplicationCredential
 from grenslan.server.authenticator import Authenticator, Principal
 from grenslan.server.oauth import TokenPrincipal
+from grenslan.server.security_events import SecurityEvent, SecurityLog
 from grenslan.service.context import InvocationContext
 from grenslan.service.dispatch import DispatchKind, ToolDispatcher
 
@@ -49,6 +58,7 @@ UNSUPPORTED_PROTOCOL_VERSION = -32022
 MAX_TEXT_CONTENT_BYTES = 8192
 _CONTEXT_KEY = "grenslan_context"
 _CREDENTIAL_KEY = "grenslan_credential"
+_AUDIT_KEY = "grenslan_audit"
 _LEGACY_HEADERS = (b"mcp-session-id", b"last-event-id")
 _FAILURE_VALUES = frozenset(status.value for status in FAILURE_STATUSES)
 
@@ -60,13 +70,17 @@ def _jsonrpc_error(code: int, message: str, data: Any = None) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "error": error}
 
 
-def _trusted(ctx: ServerRequestContext[Any, Any]) -> tuple[InvocationContext, Principal]:
+def _trusted(ctx: ServerRequestContext[Any, Any]) -> tuple[InvocationContext, Principal, RequestAudit]:
     request = ctx.request
     state = request.scope.get("state", {}) if request is not None else {}
-    context, credential = state.get(_CONTEXT_KEY), state.get(_CREDENTIAL_KEY)
-    if not isinstance(context, InvocationContext) or not isinstance(credential, ApplicationCredential | TokenPrincipal):
+    context, credential, audit = state.get(_CONTEXT_KEY), state.get(_CREDENTIAL_KEY), state.get(_AUDIT_KEY)
+    if (
+        not isinstance(context, InvocationContext)
+        or not isinstance(credential, ApplicationCredential | TokenPrincipal)
+        or not isinstance(audit, RequestAudit)
+    ):
         raise MCPError(INVALID_REQUEST, "request was not authenticated")
-    return context, credential
+    return context, credential, audit
 
 
 def _text_summary(envelope: dict[str, Any]) -> str:
@@ -88,19 +102,20 @@ def build_mcp_server(registry: ToolRegistry, dispatcher: ToolDispatcher, authent
     }
 
     async def list_tools(ctx: ServerRequestContext[Any, Any], params: PaginatedRequestParams | None) -> ListToolsResult:
-        context, _ = _trusted(ctx)
+        context, _, _ = _trusted(ctx)
         return ListToolsResult(tools=[tools[name] for name in dispatcher.exposed_tools(context)])
 
     async def call_tool(ctx: ServerRequestContext[Any, Any], params: CallToolRequestParams) -> CallToolResult:
-        context, credential = _trusted(ctx)
+        context, credential, audit = _trusted(ctx)
         arguments = params.arguments if params.arguments is not None else {}
         result = await run_while_authorized(
-            authenticator, credential, lambda: dispatcher.invoke(params.name, arguments, context)
+            authenticator, credential, lambda: dispatcher.invoke(params.name, arguments, context), audit
         )
         if result is None:
             raise MCPError(INVALID_REQUEST, "the credential is no longer authorized")
         if result.kind is DispatchKind.UNKNOWN_TOOL or result.envelope is None:
             raise MCPError(INVALID_PARAMS, "unknown tool")
+        record_refusal(audit, credential, params.name, result)
         envelope = result.envelope
         return CallToolResult(
             content=[TextContent(type="text", text=_text_summary(envelope))],
@@ -114,17 +129,21 @@ def build_mcp_server(registry: ToolRegistry, dispatcher: ToolDispatcher, authent
 class McpGate:
     """Admit only authenticated, current-revision POST requests to the SDK app."""
 
-    def __init__(self, sdk_app: ASGIApp, authenticator: Authenticator, settings: IngressSettings) -> None:
+    def __init__(
+        self, sdk_app: ASGIApp, authenticator: Authenticator, settings: IngressSettings, security: SecurityLog
+    ) -> None:
         self._sdk_app = sdk_app
         self._authenticator = authenticator
         self._settings = settings
+        self._security = security
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["method"] != "POST":
             await send_json(send, 405, None, [(b"allow", b"POST")])
             return
         headers = header_values(scope)
-        authenticated = authenticate(self._authenticator, headers)
+        audit = RequestAudit.for_scope(self._security, scope, "mcp")
+        authenticated = authenticate(self._authenticator, headers, audit)
         if not isinstance(authenticated, tuple):
             await authenticated(scope, receive, send)
             return
@@ -144,6 +163,7 @@ class McpGate:
 
         body = await _read_bounded(receive, self._settings.max_request_bytes, headers)
         if body is None:
+            audit.record(SecurityEvent.REQUEST_TOO_LARGE, principal=credential)
             await send_json(send, 413, {"error": "request_too_large"})
             return
 
@@ -152,6 +172,7 @@ class McpGate:
         state = dict(scope.get("state", {}))
         state[_CONTEXT_KEY] = context
         state[_CREDENTIAL_KEY] = credential
+        state[_AUDIT_KEY] = audit
         forwarded["state"] = state
         await self._sdk_app(forwarded, _replay(body, receive), send)
 
@@ -186,7 +207,11 @@ def _replay(body: bytes, receive: Receive) -> Receive:
 
 
 def build_mcp_app(
-    registry: ToolRegistry, dispatcher: ToolDispatcher, authenticator: Authenticator, settings: IngressSettings
+    registry: ToolRegistry,
+    dispatcher: ToolDispatcher,
+    authenticator: Authenticator,
+    settings: IngressSettings,
+    security: SecurityLog,
 ) -> tuple[ASGIApp, Any]:
     """Return the gated MCP ASGI app and an async context manager for its lifespan."""
     server = build_mcp_server(registry, dispatcher, authenticator)
@@ -203,4 +228,4 @@ def build_mcp_app(
         async with server.session_manager.run():
             yield
 
-    return McpGate(sdk_app, authenticator, settings), lifespan
+    return McpGate(sdk_app, authenticator, settings, security), lifespan

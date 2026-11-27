@@ -17,6 +17,7 @@ from grenslan.server.app import IngressSettings, create_app
 from grenslan.server.auth import ApplicationCredential, CredentialStore, token_digest
 from grenslan.server.authenticator import Authenticator
 from grenslan.server.oauth import AccessTokenValidator
+from grenslan.server.security_events import SecurityLog
 from grenslan.server.tls import server_ssl_context
 from grenslan.service.dispatch import ArgumentLimits, Invocation, ToolDispatcher, ToolOutcome
 from grenslan.service.profiles import profile_tools
@@ -27,6 +28,8 @@ SEARCH_RESULT = {"results": [], "constraints": [], "ranking": "provider_order", 
 TOKEN = "test-token-" + "a" * 32
 DELEGATING_TOKEN = "test-token-" + "d" * 32
 ALLOWED_ORIGIN = "https://agent.example"
+# High enough that no test reaches it; the limiter itself is unit-tested.
+SECURITY_LOG_LIMIT = 10_000
 
 
 @dataclass
@@ -122,7 +125,11 @@ async def running_server(
         max_request_bytes=max_request_bytes,
     )
     app = create_app(
-        registry=registry, dispatcher=dispatcher, authenticator=Authenticator(store, tokens), settings=settings
+        registry=registry,
+        dispatcher=dispatcher,
+        authenticator=Authenticator(store, tokens),
+        settings=settings,
+        security=SecurityLog(max_events_per_window=SECURITY_LOG_LIMIT, window_seconds=60.0),
     )
     tls = server_ssl_context(material.cert_file, material.key_file)
     config = uvicorn.Config(

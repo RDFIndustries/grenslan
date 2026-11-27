@@ -214,3 +214,21 @@ def test_watching_a_stale_record_notifies_immediately() -> None:
     calls: list[str] = []
     store.watch(current, lambda: calls.append("revoked"))
     assert calls == ["revoked"]
+
+
+@pytest.mark.parametrize(
+    ("values", "reason"),
+    [
+        pytest.param([], "missing", id="missing"),
+        pytest.param([b"Bearer a", b"Bearer b"], "malformed", id="duplicate"),
+        pytest.param([b"Basic abc"], "malformed", id="wrong-scheme"),
+        pytest.param([b"Bearer " + b"a" * 5000], "malformed", id="oversized"),
+        pytest.param([b"Bearer unknown-token"], "unknown_credential", id="unknown"),
+    ],
+)
+def test_failure_reason_is_recorded_for_operators(values: list[bytes], reason: str) -> None:
+    store = CredentialStore([])
+    with pytest.raises(AuthenticationFailed) as excinfo:
+        store.authenticate(values)
+    assert excinfo.value.reason == reason
+    assert str(excinfo.value) == "authentication failed"

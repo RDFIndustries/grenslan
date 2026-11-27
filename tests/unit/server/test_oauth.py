@@ -267,3 +267,38 @@ def test_issuer_settings_are_copied_at_configuration(key: SigningKey) -> None:
     jwk["kid"] = "changed"
     principal = tokens.validate(key.sign(claims()))
     assert principal.permissions == frozenset({"web_search"})
+
+
+@pytest.mark.parametrize(
+    ("overrides", "header", "reason"),
+    [
+        pytest.param({"exp": int(time.time()) - 120}, {}, "expired", id="expired"),
+        pytest.param({"aud": "https://other.example/mcp"}, {}, "audience", id="audience"),
+        pytest.param({"iss": "https://x.example"}, {}, "unknown_issuer", id="issuer"),
+        pytest.param({"nbf": int(time.time()) + 600}, {}, "not_yet_valid", id="not-yet-valid"),
+        pytest.param({"iat": None}, {}, "missing_claim", id="missing-claim"),
+        pytest.param({"exp": int(time.time()) + 7200}, {}, "lifetime", id="lifetime"),
+        pytest.param({}, {"jku": "https://evil.example"}, "header", id="header"),
+        pytest.param({}, {"kid": "nope"}, "unknown_key", id="unknown-key"),
+        pytest.param({"sub": "bad user!"}, {}, "user_claim", id="user-claim"),
+    ],
+)
+def test_rejection_reason_is_recorded_for_operators(
+    key: SigningKey, overrides: dict[str, Any], header: dict[str, Any], reason: str
+) -> None:
+    with pytest.raises(InvalidAccessToken) as excinfo:
+        validator(issuer(key)).validate(key.sign(claims(**overrides), **header))
+    assert excinfo.value.reason == reason
+    assert str(excinfo.value) == "invalid access token"
+
+
+def test_bad_signature_reason(key: SigningKey, other_key: SigningKey) -> None:
+    with pytest.raises(InvalidAccessToken) as excinfo:
+        validator(issuer(key)).validate(other_key.sign(claims(), kid=key.kid))
+    assert excinfo.value.reason == "signature"
+
+
+def test_malformed_token_reason(key: SigningKey) -> None:
+    with pytest.raises(InvalidAccessToken) as excinfo:
+        validator(issuer(key)).validate("not-a-jwt")
+    assert excinfo.value.reason == "malformed"

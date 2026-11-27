@@ -10,13 +10,40 @@ from typing import Any
 
 import anyio
 from starlette.responses import Response
-from starlette.types import Send
+from starlette.types import Scope, Send
 
 from grenslan.server.auth import AuthenticationFailed, ContextRejected, establish_context
 from grenslan.server.authenticator import Authenticator, Principal
 from grenslan.server.oauth import TokenPrincipal
+from grenslan.server.security_events import SecurityEvent, SecurityLog
 from grenslan.service.context import InvocationContext
-from grenslan.service.dispatch import DispatchResult
+from grenslan.service.dispatch import DispatchKind, DispatchResult
+
+
+@dataclass(frozen=True, slots=True)
+class RequestAudit:
+    """Security-event context for one request: the interface and the client address."""
+
+    log: SecurityLog
+    interface: str | None
+    client: str | None
+
+    @classmethod
+    def for_scope(cls, log: SecurityLog, scope: Scope, interface: str | None) -> RequestAudit:
+        client = scope.get("client")
+        return cls(log, interface, client[0] if client else None)
+
+    def record(
+        self,
+        event: SecurityEvent,
+        *,
+        principal: Principal | None = None,
+        reason: str | None = None,
+        detail: dict[str, str] | None = None,
+    ) -> None:
+        self.log.record(
+            event, interface=self.interface, client=self.client, principal=principal, reason=reason, detail=detail
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,31 +103,51 @@ def header_values(scope: dict[str, Any] | Any) -> dict[str, list[bytes]]:
 
 
 def authenticate(
-    authenticator: Authenticator, headers: dict[str, list[bytes]]
+    authenticator: Authenticator, headers: dict[str, list[bytes]], audit: RequestAudit
 ) -> tuple[Principal, InvocationContext] | Response:
     authorization = headers.get("authorization", [])
     try:
         credential = authenticator.authenticate(authorization)
-    except AuthenticationFailed:
+    except AuthenticationFailed as exc:
+        audit.record(SecurityEvent.AUTHENTICATION_FAILED, reason=exc.reason)
         return unauthorized(authenticator.challenge(token_presented=bool(authorization)))
     try:
         return credential, establish_context(credential, headers)
     except ContextRejected as exc:
-        return error_response(exc.status, "invalid_context" if exc.status == 400 else "delegation_not_permitted")
+        code = "invalid_context" if exc.status == 400 else "delegation_not_permitted"
+        audit.record(SecurityEvent.CONTEXT_REJECTED, principal=credential, reason=code)
+        return error_response(exc.status, code)
+
+
+def record_refusal(audit: RequestAudit, principal: Principal, tool: str, result: DispatchResult) -> None:
+    """Record a dispatcher refusal that matters for security: a denied tool or oversized arguments."""
+    if result.kind is DispatchKind.FORBIDDEN:
+        audit.record(SecurityEvent.AUTHORIZATION_DENIED, principal=principal, detail={"tool": tool})
+    elif result.kind is DispatchKind.TOO_LARGE:
+        audit.record(SecurityEvent.REQUEST_TOO_LARGE, principal=principal, detail={"tool": tool})
 
 
 async def run_while_authorized(
     authenticator: Authenticator,
     principal: Principal,
     work: Callable[[], Awaitable[DispatchResult]],
+    audit: RequestAudit,
 ) -> DispatchResult | None:
     """Run ``work``; return None if the principal was revoked, changed or expired before it finished."""
+    revoked = False
     with anyio.CancelScope() as scope:
+
+        def revoke() -> None:
+            nonlocal revoked
+            revoked = True
+            scope.cancel()
+
         if isinstance(principal, TokenPrincipal):
             scope.deadline = anyio.current_time() + max(0.0, principal.expires_at - time.time())
-        unwatch = authenticator.watch(principal, scope.cancel)
+        unwatch = authenticator.watch(principal, revoke)
         try:
             return await work()
         finally:
             unwatch()
+    audit.record(SecurityEvent.WORK_REVOKED, principal=principal, reason="revoked" if revoked else "expired")
     return None

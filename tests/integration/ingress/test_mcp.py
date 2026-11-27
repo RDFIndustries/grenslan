@@ -257,3 +257,31 @@ async def test_auto_mode_client_settles_on_current_revision(server: RunningServe
     async with Client(transport, mode="auto") as client:
         await client.call_tool("web_search", {"query": "x"})
         assert client.protocol_version == VERSION
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(b"{not json", id="invalid-json"),
+        pytest.param(b'{"jsonrpc": "1.0", "id": 1, "method": "tools/list"}', id="wrong-jsonrpc-version"),
+        pytest.param(b'[{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}]', id="batch"),
+        pytest.param(b'"tools/list"', id="not-an-object"),
+    ],
+)
+async def test_malformed_protocol_messages_are_rejected(
+    server: RunningServer, http: httpx2.AsyncClient, body: bytes
+) -> None:
+    response = await http.post(f"{server.base_url}/mcp", content=body, headers=headers("tools/list"))
+    assert response.status_code == 400
+    assert "result" not in response.text
+    assert server.handler.calls == []
+
+
+async def test_method_header_must_match_body(server: RunningServer, http: httpx2.AsyncClient) -> None:
+    response = await http.post(
+        f"{server.base_url}/mcp",
+        content=rpc("tools/call", {"name": "web_search", "arguments": {"query": "x"}}),
+        headers=headers("tools/list"),
+    )
+    assert response.status_code == 400
+    assert server.handler.calls == []

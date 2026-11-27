@@ -27,10 +27,12 @@ from grenslan.contracts.envelope import Status
 from grenslan.contracts.registry import ToolRegistry
 from grenslan.server.app_support import (
     IngressSettings,
+    RequestAudit,
     authenticate,
     error_response,
     header_values,
     json_response,
+    record_refusal,
     run_while_authorized,
     send_json,
     unauthorized,
@@ -38,6 +40,7 @@ from grenslan.server.app_support import (
 from grenslan.server.authenticator import Authenticator
 from grenslan.server.mcp_endpoint import build_mcp_app
 from grenslan.server.oauth import AccessTokenValidator
+from grenslan.server.security_events import SecurityEvent, SecurityLog
 from grenslan.service.dispatch import DispatchKind, DispatchResult, ToolDispatcher
 
 __all__ = ["IngressSettings", "create_app"]
@@ -91,11 +94,12 @@ def _rest_response(result: DispatchResult) -> Response:
 
 
 def _rest_endpoint(
-    dispatcher: ToolDispatcher, authenticator: Authenticator, settings: IngressSettings
+    dispatcher: ToolDispatcher, authenticator: Authenticator, settings: IngressSettings, security: SecurityLog
 ) -> Callable[[Request], Awaitable[Response]]:
     async def invoke_tool(request: Request) -> Response:
+        audit = RequestAudit.for_scope(security, request.scope, "rest")
         headers = header_values(request.scope)
-        authenticated = authenticate(authenticator, headers)
+        authenticated = authenticate(authenticator, headers, audit)
         if isinstance(authenticated, Response):
             return authenticated
         credential, context = authenticated
@@ -104,13 +108,15 @@ def _rest_endpoint(
         try:
             body = await _read_body(request, settings.max_request_bytes)
         except _BodyTooLarge:
+            audit.record(SecurityEvent.REQUEST_TOO_LARGE, principal=credential)
             return error_response(413, "request_too_large")
         tool = request.path_params["tool_name"]
         result = await run_while_authorized(
-            authenticator, credential, lambda: dispatcher.invoke_body(tool, body, context)
+            authenticator, credential, lambda: dispatcher.invoke_body(tool, body, context), audit
         )
         if result is None:
             return unauthorized(authenticator.challenge(token_presented=True))
+        record_refusal(audit, credential, tool, result)
         return _rest_response(result)
 
     return invoke_tool
@@ -134,12 +140,23 @@ def _host_name(value: bytes) -> str | None:
     return text.rsplit(":", 1)[0] if text.count(":") == 1 else text
 
 
+def _count_reason(values: list[bytes]) -> str | None:
+    if not values:
+        return "missing"
+    return "duplicate" if len(values) > 1 else None
+
+
+def _first_value(name: str, values: list[bytes]) -> dict[str, str]:
+    return {name: values[0].decode("latin-1")} if values else {}
+
+
 class RequestGate:
     """Host and Origin checks for every HTTP request, plus no-store and nosniff on every response."""
 
-    def __init__(self, app: ASGIApp, settings: IngressSettings) -> None:
+    def __init__(self, app: ASGIApp, settings: IngressSettings, security: SecurityLog) -> None:
         self.app = app
         self.settings = settings
+        self.security = security
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -155,13 +172,18 @@ class RequestGate:
                 ]
             await send(message)
 
+        audit = RequestAudit.for_scope(self.security, scope, None)
         headers = header_values(scope)
         hosts = headers.get("host", [])
         if len(hosts) != 1 or _host_name(hosts[0]) not in self.settings.allowed_hosts:
+            audit.record(SecurityEvent.HOST_REJECTED, reason=_count_reason(hosts), detail=_first_value("host", hosts))
             await send_json(send_with_headers, 400, {"error": "host_not_allowed"})
             return
         origins = headers.get("origin", [])
         if origins and (len(origins) != 1 or origins[0].decode("latin-1") not in self.settings.allowed_origins):
+            audit.record(
+                SecurityEvent.ORIGIN_REJECTED, reason=_count_reason(origins), detail=_first_value("origin", origins)
+            )
             body = {"jsonrpc": "2.0", "error": {"code": -32600, "message": "origin not allowed"}}
             await send_json(send_with_headers, 403, body)
             return
@@ -174,8 +196,9 @@ def create_app(
     dispatcher: ToolDispatcher,
     authenticator: Authenticator,
     settings: IngressSettings,
+    security: SecurityLog,
 ) -> ASGIApp:
-    mcp_app, mcp_lifespan = build_mcp_app(registry, dispatcher, authenticator, settings)
+    mcp_app, mcp_lifespan = build_mcp_app(registry, dispatcher, authenticator, settings, security)
 
     @asynccontextmanager
     async def lifespan(_app: Starlette) -> AsyncIterator[None]:
@@ -183,10 +206,12 @@ def create_app(
             yield
 
     routes = [
-        Route("/api/v1/tools/{tool_name}", _rest_endpoint(dispatcher, authenticator, settings), methods=["POST"]),
+        Route(
+            "/api/v1/tools/{tool_name}", _rest_endpoint(dispatcher, authenticator, settings, security), methods=["POST"]
+        ),
         Route("/mcp", mcp_app),
     ]
     if authenticator.tokens is not None:
         tokens = authenticator.tokens
         routes.append(Route(tokens.metadata_path, _metadata_endpoint(tokens), methods=["GET"]))
-    return RequestGate(Starlette(routes=routes, lifespan=lifespan), settings)
+    return RequestGate(Starlette(routes=routes, lifespan=lifespan), settings, security)

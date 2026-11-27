@@ -41,11 +41,13 @@ def token_digest(token: str) -> bytes:
 
 def bearer_token(authorization: Sequence[bytes]) -> bytes:
     """The token from exactly one well-formed ``Authorization: Bearer`` header value."""
+    if not authorization:
+        raise AuthenticationFailed("missing")
     if len(authorization) != 1 or len(authorization[0]) > MAX_AUTHORIZATION_BYTES:
-        raise AuthenticationFailed
+        raise AuthenticationFailed("malformed")
     match = _BEARER.match(authorization[0])
     if match is None:
-        raise AuthenticationFailed
+        raise AuthenticationFailed("malformed")
     return match.group(1)
 
 
@@ -67,8 +69,11 @@ class ContextGrant(Protocol):
 
 
 class AuthenticationFailed(Exception):
-    def __init__(self) -> None:
+    """Authentication failed. The message is fixed; ``reason`` is for operator diagnostics only."""
+
+    def __init__(self, reason: str) -> None:
         super().__init__("authentication failed")
+        self.reason = reason
 
 
 class ContextRejected(Exception):
@@ -154,7 +159,7 @@ class CredentialStore:
         """Resolve the single ``Authorization`` header value to a current credential."""
         credential = self.lookup(bearer_token(authorization))
         if credential is None:
-            raise AuthenticationFailed
+            raise AuthenticationFailed("unknown_credential")
         return credential
 
     def lookup(self, token: bytes) -> ApplicationCredential | None:

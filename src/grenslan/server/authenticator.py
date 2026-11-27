@@ -26,11 +26,13 @@ class Authenticator:
         if credential is not None:
             return credential
         if self.tokens is None:
-            raise AuthenticationFailed
+            raise AuthenticationFailed("unknown_credential")
         try:
             return self.tokens.validate(token.decode("ascii"))
-        except InvalidAccessToken:
-            raise AuthenticationFailed from None
+        except InvalidAccessToken as error:
+            # A value that is not JWT-shaped was meant as an application credential.
+            reason = "unknown_credential" if error.reason == "malformed" else f"token_{error.reason}"
+            raise AuthenticationFailed(reason) from None
 
     def watch(self, principal: Principal, callback: Callable[[], None]) -> Callable[[], None]:
         """Call ``callback`` once if the principal is revoked or its grant changes."""

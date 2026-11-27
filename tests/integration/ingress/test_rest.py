@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx2
 import pytest
 
-from ingress_fixtures import DELEGATING_TOKEN, TOKEN, RunningServer, running_server
+from ingress_fixtures import DELEGATING_TOKEN, TOKEN, RunningServer, credentials, running_server
 from tls_fixtures import TlsMaterial, make_tls_material
 
 pytestmark = pytest.mark.integration
@@ -183,16 +183,35 @@ async def test_revoked_credential_is_rejected_on_next_request(
 
 async def test_revocation_stops_active_work(material: TlsMaterial) -> None:
     gate = asyncio.Event()
-    async with running_server(material, gate=gate) as running:
-        async with httpx2.AsyncClient(verify=material.client_context(), trust_env=False) as http:
-            request = asyncio.create_task(
-                http.post(f"{running.base_url}/api/v1/tools/web_search", json={"query": "x"}, headers=auth())
-            )
-            await asyncio.wait_for(running.handler.started.wait(), 5)
-            running.store.replace([])
-            response = await asyncio.wait_for(request, 5)
+    async with (
+        running_server(material, gate=gate) as running,
+        httpx2.AsyncClient(verify=material.client_context(), trust_env=False) as http,
+    ):
+        request = asyncio.create_task(
+            http.post(f"{running.base_url}/api/v1/tools/web_search", json={"query": "x"}, headers=auth())
+        )
+        await asyncio.wait_for(running.handler.started.wait(), 5)
+        running.store.replace([])
+        response = await asyncio.wait_for(request, 5)
         assert response.status_code == 401
         assert running.handler.cancelled
+
+
+async def test_revocation_leaves_other_credentials_work_running(material: TlsMaterial) -> None:
+    gate = asyncio.Event()
+    async with (
+        running_server(material, gate=gate) as running,
+        httpx2.AsyncClient(verify=material.client_context(), trust_env=False) as http,
+    ):
+        url = f"{running.base_url}/api/v1/tools/web_search"
+        revoked = asyncio.create_task(http.post(url, json={"query": "a"}, headers=auth()))
+        survivor = asyncio.create_task(http.post(url, json={"query": "b"}, headers=auth(DELEGATING_TOKEN)))
+        while len(running.handler.calls) < 2:
+            await asyncio.sleep(0.01)
+        running.store.replace([c for c in credentials() if c.credential_id != "plain"])
+        assert (await asyncio.wait_for(revoked, 5)).status_code == 401
+        gate.set()
+        assert (await asyncio.wait_for(survivor, 5)).status_code == 200
 
 
 async def tls_handshake(port: int, context: ssl.SSLContext) -> None:

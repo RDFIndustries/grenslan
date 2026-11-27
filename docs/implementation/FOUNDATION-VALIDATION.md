@@ -361,8 +361,8 @@ The local research knowledge base contains SearXNG, Crossref REST API and arXiv 
 |---|---|
 | Repository readiness | Complete (Section 4.1). |
 | Python and resolver | Selected and bootstrapped (Sections 4.6, 4.10, 4.11). ARM64 compatibility and security advisory review remain open. |
-| MCP SDK / ingress spike | Gate validated (Section 4.5); SDK and types selected (Section 4.8). Request cancellation, MCP authorization profile and release security advisories remain for F03. |
-| TLS and identity | Direct TLS with private test CA validated for MCP (Section 4.5). REST, delegation headers and certificate replacement remain for F03. |
+| MCP SDK / ingress spike | Gate validated (Section 4.5); SDK and types selected (Section 4.8). Request cancellation and the MCP authorization profile are implemented in F03 (Section 6.2). Security advisories for the pinned versions remain to be reviewed before release. |
+| TLS and identity | Direct TLS with private test CA validated for MCP (Section 4.5). REST, delegation headers and certificate replacement by restart are implemented and tested in F03 (Section 6.2). |
 | Provider config | Safe parser and cross-field scope/registry checks with sanitized fixtures. |
 | Outbound enforcement | In-process mechanism validated (Section 4.8). SearXNG upstream egress control is an open design gap needing validation and maintainer review. |
 | SearXNG | Interface, distribution, licence and outgoing-proxy support verified (Sections 4.8–4.9). Select and pin a build, decide the application server, and validate process isolation and upstream egress control. |
@@ -441,7 +441,7 @@ Moved to later work packages by PRP-001:
 - F04: ingress and authentication settings, environment overrides, and wiring the configured `ArgumentLimits` and request-size values.
 - F03: the MCP and REST adapters on the dispatcher.
 
-### 6.2 F03: secure ingress and trusted context (in progress)
+### 6.2 F03: secure ingress and trusted context
 
 Implemented in `src/grenslan/server/`:
 
@@ -467,6 +467,35 @@ Limitations of the access-token profile:
 - A token whose scopes grant no permitted tool is authenticated but sees no tools; the HTTP `insufficient_scope` step-up response is not used, consistent with tool-level authorization failures being tool results.
 - Configuration is programmatic until F04 provides the operator configuration file and environment overrides.
 
-Remaining for F03:
-- Redacted security diagnostics for authentication, delegation and gate rejections.
-- Certificate replacement without restart.
+Security diagnostics, revocation isolation and certificate handling, added 2026-11-27:
+
+| Component | Behaviour | Contract basis |
+|---|---|---|
+| `server/security_events.py` | One structured `WARNING` event on the `grenslan.security` logger per rejected or revoked request. The events are `authentication_failed`, `context_rejected`, `host_rejected`, `origin_rejected`, `authorization_denied`, `request_too_large` and `work_revoked`. Fields: interface, client address, application namespace and principal (`credential:<id>` or `token:<issuer>#<kid>`), a reason from a fixed vocabulary, and named details. Request-derived values (rejected `Origin` or `Host`) are reduced to printable ASCII and cut to 128 characters. Tokens, `Authorization` values, credential digests and rejected identity-header values are never recorded. Each event kind is limited per window; suppressed events are counted and reported with the next event of that kind. | PRP-001 F03; F-G14 (diagnostic redaction portion) |
+| `server/auth.py`, `server/oauth.py` | Failures carry an internal reason (`missing`, `malformed`, `unknown_credential`; for tokens `expired`, `not_yet_valid`, `audience`, `issuer`, `unknown_issuer`, `unknown_key`, `signature`, `missing_claim`, `lifetime`, `header`, `scope`, `user_claim`, `malformed`) used only in the security event. The client still receives the same 401 and fixed message. | TC-048 |
+
+Certificate replacement: AD-428 requires certificate material that is replaceable without rebuilding the container, and the architecture states that a controlled restart is sufficient. Certificate and key are read from the configured files at startup, so no live reload is implemented.
+
+Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 853 tests, 83 of them integration tests. Added:
+- unit tests for event structure, attribution, sanitizing, bounding, rate limiting and failure reasons;
+- 11 integration tests asserting the emitted events and that the sent token and rejected identity-header values do not appear in the log;
+- revocation of one credential while another credential's request is in flight: the revoked request gets 401 and the other completes with 200;
+- malformed MCP messages (invalid JSON, wrong JSON-RPC version, batch, non-object) and a `Mcp-Method` header that contradicts the body, all rejected with 400 before any handler runs;
+- client rejection of an expired server certificate and of a wrong hostname;
+- certificate files replaced at the same mounted paths and a restart: the new certificate is served, and a client trusting only the previous CA is rejected.
+
+Mutation checks: logging the `Authorization` value, logging rejected identity-header values, dropping the MCP denial event, always reporting `expired` instead of `revoked`, removing the rate limit, and making credential replacement cancel all work each fail the suite. Each mutation was reverted.
+
+F03 status: the work package's requirements are implemented and its deliverable is met: verified HTTPS MCP and REST calls against a real local TLS server with a private test CA, and no in-process transport shortcut. The Archon task is in review.
+
+Gate evidence from F03 (foundation gates are assessed together at the milestone gate):
+- F-G02: MCP 2026-07-28 discovery and invocation and REST equivalents over HTTPS; unsupported and handshake-era revisions, legacy `initialize`, other methods and plaintext rejected; no plaintext listener. Starting a foundation search with a deterministic fixture provider depends on F05 and F06.
+- F-G03: trusted private CA accepted; untrusted CA, expired certificate and wrong hostname rejected; certificate replacement by restart without rebuild. Grenslan-provided clients (T-502) do not exist yet; they are checked when the SDK and CLI are built.
+- F-G04: missing, invalid and revoked credentials denied; forged namespace and identity arguments rejected; unauthorized and duplicate delegation headers rejected; static credentials and access tokens go through the same dispatcher policy.
+- F-G05: revoking one active credential does not cancel another credential's work. Isolation of cursors, caches and operations is shown with F06 and F07.
+- F-G14: diagnostic output redaction for ingress. Source-credential and query-disclosure scoping belong to F05 and F06.
+
+Limitations carried forward:
+- Ingress settings, credentials, issuers, security-event limits and TLS file paths are constructed in code until F04 adds the operator configuration file. The security-event limits then become operator settings.
+- Logging is the Python standard library's. Handler, format and destination are deployment configuration, to be documented with packaging.
+- Queued work does not exist until F07; revocation of queued operations is verified there.
