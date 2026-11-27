@@ -1,0 +1,19 @@
+use_default_settings:
+  engines:
+    keep_only: [wikipedia, duckduckgo, brave, wikidata, google cse, radio browser]
+server:
+  secret_key: "disposable-probe-secret-not-a-credential"
+  limiter: false
+  image_proxy: false
+search:
+  formats: [html, json]
+plugins:
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: false
+engines:
+  - name: radio browser
+    disabled: true
+outgoing:
+  proxies:
+    all://:
+      - http://172.31.250.2:3128
