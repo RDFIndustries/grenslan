@@ -40,6 +40,7 @@ from grenslan.providers.registry import ImplementationRegistry
 _LOGGER = logging.getLogger("grenslan.providers")
 _SERVING = frozenset({"ready", "degraded"})
 _OPERATIONAL = frozenset({"ready", "degraded", "unavailable"})
+MAX_LOGGED_REASON = 500
 T = TypeVar("T")
 
 
@@ -65,6 +66,23 @@ class _Instance:
     provider: Provider | None = None
     description: ProviderDescription | None = None
     health: Health = field(default_factory=lambda: Health(state="uninitialized"))
+
+
+def _reason(health: Health) -> str:
+    """The first issue of a health report, for the operator's log.
+
+    Issue messages are required to be safe and free of secrets (PROVIDER_CONTRACT).
+    Control characters are still escaped, so a message cannot forge log lines,
+    and the length is bounded.
+    """
+    if not health.issues:
+        return ""
+    issue = health.issues[0]
+    text = f"{issue.code}: {issue.message}" if issue.message else issue.code
+    text = text.encode("unicode_escape").decode("ascii") if not text.isprintable() else text
+    if len(text) > MAX_LOGGED_REASON:
+        text = text[:MAX_LOGGED_REASON] + "…"
+    return f" ({text})"
 
 
 def _unavailable(code: str, message: str) -> Health:
@@ -121,7 +139,9 @@ class ProviderSet:
 
     def _transition(self, instance: _Instance, health: Health) -> None:
         if health.state != instance.health.state:
-            _LOGGER.info("provider %s: %s -> %s", instance.provider_id, instance.health.state, health.state)
+            _LOGGER.info(
+                "provider %s: %s -> %s%s", instance.provider_id, instance.health.state, health.state, _reason(health)
+            )
         instance.health = health
 
     async def _guarded(self, instance: _Instance, call: Callable[[LifecycleContext], Awaitable[Health]]) -> None:

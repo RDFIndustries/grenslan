@@ -12,10 +12,12 @@
 SearXNG therefore has no TCP listener and no route out except the proxy.
 
 The child gets a minimal environment, so no Grenslan configuration or secret
-reaches it. Its output is kept, bounded, only until it is healthy, so that a
-startup failure can be explained. After that it is discarded, because
-SearXNG's diagnostics can contain query text. ``stop`` terminates the whole
-process group and removes the runtime directory.
+reaches it. Its home and temporary directory are the runtime directory, so
+SearXNG's cache databases are private to the service and removed on stop.
+Its output is kept, bounded, only until it is healthy, so that a startup
+failure can be explained. After that it is discarded, because SearXNG's
+diagnostics can contain query text. ``stop`` terminates the whole process
+group and removes the runtime directory.
 """
 
 from __future__ import annotations
@@ -105,6 +107,8 @@ class BundledSearxng:
             "LANG": "C.UTF-8",
             "PYTHONDONTWRITEBYTECODE": "1",
             "SEARXNG_SETTINGS_PATH": str(runtime / "settings.yml"),
+            # SearXNG puts its cache databases in the temporary directory.
+            "TMPDIR": str(runtime),
         }
 
     def _confine(self, runtime: Path, *extra: str) -> list[str]:
@@ -191,7 +195,10 @@ class BundledSearxng:
         _, error = await probe.communicate()
         if probe.returncode != 0:
             detail = error.decode("utf-8", "replace").strip()[-500:]
-            raise SearxngUnavailable(f"SearXNG cannot be confined on this host: {detail}")
+            raise SearxngUnavailable(
+                f"SearXNG cannot be confined on this host: {detail}. In a container, run it with Grenslan's "
+                "seccomp profile (docker/README.md)."
+            )
 
     async def _start_proxy(self, path: Path) -> None:
         ready = asyncio.Event()

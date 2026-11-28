@@ -42,6 +42,7 @@ class FixtureBehaviour:
     health: Behaviour = "ok"
     health_state: ProviderState = "ready"
     shutdown: Behaviour = "ok"
+    failure_message: str = "fixture initialization failed"
     describe_overrides: Mapping[str, Any] = field(default_factory=dict)
     results: tuple[Discovery, ...] = ()
 
@@ -86,7 +87,7 @@ class FixtureSearchProvider:
         self.calls.initialized += 1
         await self._act(self.behaviour.initialize)
         if self.behaviour.initialize == "fail":
-            issue = Issue(code="provider_unavailable", message="fixture initialization failed")
+            issue = Issue(code="provider_unavailable", message=self.behaviour.failure_message)
             return ProviderResult(outcome="failed", value=None, issues=(issue,))
         return ProviderResult(outcome="completed", value=Health(state=self.behaviour.initial_state))
 

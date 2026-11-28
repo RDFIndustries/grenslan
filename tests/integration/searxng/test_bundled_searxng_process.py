@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import time
 from pathlib import Path
 
 import anyio
@@ -52,10 +54,15 @@ async def test_searxng_reaches_only_approved_destinations_through_the_proxy(
         runtime_parent=tmp_path,
     )  # fmt: skip
     bundled = BundledSearxng(settings, policy, resolver=resolver)
+    started = time.time() - 1
     await bundled.start()
     try:
         runtime = bundled.socket_path.parent
-        assert sorted(path.name for path in runtime.iterdir()) == ["egress.sock", "searxng.sock", "settings.yml"]
+        names = {path.name for path in runtime.iterdir()}
+        assert {"egress.sock", "searxng.sock", "settings.yml"} <= names
+        # Everything else SearXNG writes is its cache, inside the private runtime directory.
+        assert all(name.startswith("sxng_cache_") for name in names - {"egress.sock", "searxng.sock", "settings.yml"})
+        assert any(name.endswith(".db") for name in names)
         assert oct(runtime.stat().st_mode & 0o777) == "0o700"
         async with httpcore2.AsyncConnectionPool(uds=str(bundled.socket_path)) as pool:
             with anyio.fail_after(30):
@@ -71,3 +78,4 @@ async def test_searxng_reaches_only_approved_destinations_through_the_proxy(
     assert "html.duckduckgo.com" not in resolver.lookups
     assert "html.duckduckgo.com:443 denied" in caplog.text
     assert list(tmp_path.iterdir()) == []
+    assert not [p for p in Path(tempfile.gettempdir()).glob("sxng_cache_*") if p.stat().st_mtime >= started]

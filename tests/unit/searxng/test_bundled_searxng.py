@@ -44,8 +44,10 @@ async def test_without_confinement_searxng_is_not_started(tmp_path: Path, monkey
     failing_probe = [sys.executable, "-c", "import sys; sys.stderr.write('confinement failed: refused'); sys.exit(70)"]
     monkeypatch.setattr(BundledSearxng, "_confine", lambda self, runtime, *extra: failing_probe)
     bundled = BundledSearxng(settings(fake_install(tmp_path / "install"), tmp_path / "run"), POLICY)
-    with pytest.raises(SearxngUnavailable, match="cannot be confined on this host: confinement failed: refused"):
+    expected = "cannot be confined on this host: confinement failed: refused"
+    with pytest.raises(SearxngUnavailable, match=expected) as raised:
         await bundled.start()
+    assert "seccomp profile" in str(raised.value)
     assert not started.exists()
     assert list((tmp_path / "run").iterdir()) == []
 
@@ -79,7 +81,11 @@ async def test_the_child_receives_only_a_minimal_environment(tmp_path: Path, mon
         await BundledSearxng(settings(fake_install(tmp_path / "install"), tmp_path / "run"), POLICY).start()
     environment = json.loads(seen.read_text())
     environment.pop("LC_CTYPE", None)  # may be added by the interpreter itself
-    assert sorted(environment) == ["HOME", "LANG", "PATH", "PYTHONDONTWRITEBYTECODE", "SEARXNG_SETTINGS_PATH"]
+    assert sorted(environment) == ["HOME", "LANG", "PATH", "PYTHONDONTWRITEBYTECODE", "SEARXNG_SETTINGS_PATH", "TMPDIR"]
+    # SearXNG's caches and other temporary files stay in the private runtime directory, removed on stop.
+    runtime = Path(environment["SEARXNG_SETTINGS_PATH"]).parent
+    assert environment["TMPDIR"] == environment["HOME"] == str(runtime)
+    assert runtime.parent == tmp_path / "run"
 
 
 @pytest.mark.parametrize("recorded", ["commit=0000000000000000000000000000000000000000\n", None])

@@ -91,6 +91,27 @@ async def test_initialization_exception_is_contained_without_its_message(caplog:
     assert FAILURE_DETAIL_TEXT not in repr(providers.health("broken"))
 
 
+async def test_the_reason_for_an_unavailable_provider_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="grenslan.providers")
+    fixtures = FixtureSet(behaviours={"broken": FixtureBehaviour(initialize="fail")})
+    await started(fixtures, "broken", "primary")
+    lines = [record.getMessage() for record in caplog.records]
+    assert "provider broken: initializing -> unavailable (provider_unavailable: fixture initialization failed)" in lines
+    assert "provider primary: initializing -> ready" in lines
+
+
+async def test_logged_reasons_are_escaped_and_bounded(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="grenslan.providers")
+    message = "first line\nFAKE provider other: ready" + "x" * 900  # within the contract's 1000-character limit
+    fixtures = FixtureSet(behaviours={"broken": FixtureBehaviour(initialize="fail", failure_message=message)})
+    await started(fixtures, "broken")
+    (line,) = [r.getMessage() for r in caplog.records if "-> unavailable" in r.getMessage()]
+    assert "\n" not in line
+    assert "first line\\nFAKE provider" in line
+    assert len(line) < 700
+    assert line.endswith("…)")
+
+
 async def test_hung_initialization_is_bounded_by_the_deadline() -> None:
     fixtures = FixtureSet(behaviours={"slow": FixtureBehaviour(initialize="hang")})
     begin = time.monotonic()
