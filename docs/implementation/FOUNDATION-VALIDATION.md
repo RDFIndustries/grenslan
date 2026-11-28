@@ -594,6 +594,24 @@ Egress proxy for confined processes (S1, S3):
 
 Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1139 tests; 24 cover the proxy against loopback upstreams, and were repeated 5 times without a failure. Mutation checks: each of 11 weakenings was caught. They covered the https scope check, the tunnel limit, activity tracking in each direction, the incremental head limit, forwarding early bytes, the socket mode, refusing an existing path, and the method, authority and version checks. SearXNG's observed proxy use (`CONNECT host:443 HTTP/1.1`, with no local name resolution) matches what the proxy accepts. A test with a real SearXNG process comes with the supervised bundled process.
 
+Bundled SearXNG process (S1 to S4, S6):
+
+| Component | Behaviour | Basis |
+|---|---|---|
+| `packaging/searxng/` | `SOURCE` pins the repository, commit, version and reference image. `requirements.lock` is SearXNG's own runtime and server requirements, with indirect dependencies pinned to the official image's versions. It is hash-locked for Linux and identical for x86_64 and aarch64. `install.sh` fetches the commit, refuses any other commit, writes the version module so that git is not needed at run time, and installs the lock with `--require-hashes --no-deps` into a separate virtual environment. The full source tree stays installed. | AD-423, S6 |
+| `searxng/settings.py` | Generates SearXNG's settings as JSON, so configured values cannot alter their structure. Only the configured engines are kept (`keep_only`), and the plugin list is empty. Only JSON is served. The limiter, image proxy and metrics are off. TLS verification is on, HTTP/2 is off, and every outgoing request goes to the relay. | S3 |
+| `searxng/confine.py` | Enters new user and network namespaces, mapping only the caller's own user and group IDs. Brings up loopback, and refuses to continue (exit 70) if any other interface exists or a namespace cannot be created. Relays `127.0.0.1:3128` to the egress socket, runs the command as a child, passes on SIGTERM and SIGINT, and exits with the child's status. | S1 |
+| `searxng/bundled.py` | Creates a 0700 runtime directory with the settings and two sockets, egress and SearXNG; SearXNG has no TCP listener. It starts the egress proxy and probes confinement: if confinement fails, SearXNG is not started and the error explains why. It then starts Granian (WSGI, one worker, a configured thread count) through the launcher in its own process group, with a five-variable environment and no inherited Grenslan configuration. It waits for `/healthz`. Output is kept, bounded, only until healthy, then discarded, because SearXNG's diagnostics can contain query text. `stop` terminates the process group, escalating to SIGKILL, and removes the runtime directory. | S1, S4, AD-423, F-G14 |
+
+Validation on 2026-11-27 (same environment, unprivileged namespaces available): `scripts/check.sh` passed with 1161 tests. 23 cover settings, the launcher and the supervisor. One integration test runs the real pinned SearXNG under Granian, confined, with engines `wikipedia` and `duckduckgo` and a scope approving only `en.wikipedia.org:443`. The resolver maps that host to loopback, so nothing reaches the internet. The test confirmed the following:
+- the runtime directory holds only the settings and the two sockets, at mode 0700;
+- a JSON search over the socket returns 200, with both engines reported unresponsive;
+- the proxy resolved the approved host, so its tunnel passed the policy;
+- the unapproved engine's host was never resolved, and its tunnel was logged as denied;
+- the runtime directory was removed on stop.
+
+It passed 5 consecutive runs, and no processes or directories were left behind. Mutation checks: each of 10 weakenings was caught. They covered the network namespace, the identity mapping, the loopback-only check, the empty plugin list, the relay proxy setting, `keep_only`, engine-name validation, the confinement probe, runtime cleanup, and environment inheritance.
+
 Network-scope semantics (the schema defines the fields but not their meaning):
 - `public_web` admits only the standard port: 443 for https, and 80 for plain http when `allow_outbound_http` is set. Any other port must be a listed destination. Decided by the maintainer, 2026-11-27.
 - A listed destination without `allow_private_address` must resolve only to public addresses. `allow_private_address` admits private, loopback and link-local addresses, but never metadata, unspecified, multicast or broadcast addresses.
@@ -605,4 +623,6 @@ Limitations:
 - The redirect limit (5) and body limit (16 MiB) are protective defaults; providers will pass the configured limits when they are wired in.
 - HTTP/2 is not enabled for outbound requests.
 - The proxy carries https tunnels only. A SearXNG engine needing plain http would need an explicit decision first.
-- Proxy timeouts and the tunnel limit are constructor arguments; their configured values come with the bundled-process work.
+- Proxy timeouts, the tunnel limit, SearXNG's thread count, request timeouts and startup timeout are constructor arguments. Their configured values come with the SearXNG provider's adapter settings.
+- The real-process test shows that approved and unapproved tunnels are handled correctly. A completed upstream TLS exchange through the tunnel is not shown, because that would need the internet or a trusted fixture certificate for a real engine host.
+- Running in the container needs the Grenslan seccomp profile (S2), which comes with the container work.

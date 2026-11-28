@@ -37,6 +37,17 @@ Tests marked `integration` start a real Uvicorn server over HTTPS on a loopback 
 
 Ruff and mypy cover `src/` and `tests/`. `docs/` is excluded from linting because it holds the adopted declaration file `docs/contracts/PROVIDER_INTERFACES.py` and disposable preflight scripts, which are not package code.
 
+## Bundled SearXNG for development
+
+Integration tests of the bundled SearXNG process need SearXNG installed in a separate environment, and unprivileged user and network namespaces:
+
+```sh
+packaging/searxng/install.sh local/searxng /usr/bin/python3.12   # fetches the pinned commit and locked dependencies
+unshare -rn true && echo "namespaces available"
+```
+
+`local/` is ignored by git. The tests look for `local/searxng`, or for `GRENSLAN_TEST_SEARXNG_PREFIX`, and are skipped when neither is present. A skipped test means that behaviour is unverified in that environment. They make no internet connections.
+
 ## Running the service
 
 ```sh
@@ -55,9 +66,10 @@ The configuration is specified in `SERVICE-CONFIGURATION.md`. Provider registrat
 |---|---|
 | `src/grenslan/` | The `grenslan` package. Components are added as their work packages are implemented; there are no placeholder modules. |
 | `tests/unit/` | Unit tests, grouped by package area. `contracts/test_adopted_contract_files.py` checks the integrity of the adopted contract files. |
-| `tests/integration/` | Tests against a running HTTPS server (`ingress/` covers REST and MCP; `service/` runs the configured service, including `SIGHUP` reload). |
+| `tests/integration/` | Tests against a running HTTPS server (`ingress/` covers REST and MCP; `service/` runs the configured service, including `SIGHUP` reload) or a real bundled SearXNG process (`searxng/`). |
 | `examples/` | Reviewed configuration samples; tests validate them. |
 | `tests/support/` | Shared, sanitized test fixtures (`minimal_requests.py`, `config_fixtures.py`, `tls_fixtures.py` for a throwaway CA and server certificate, `ingress_fixtures.py` for a running server with test credentials, `jwt_fixtures.py` for throwaway signing keys and access tokens, `fixture_providers.py` for a controllable fixture search provider registered only by tests, `service_fixtures.py` for service configurations with throwaway consumer tokens, `manifests/` for the fixture's dependency manifest, `example_launcher.py` for the extension launcher pattern), importable from any test. |
+| `packaging/searxng/` | The pinned SearXNG source reference, its hash-locked requirements and its install script. |
 | `scripts/` | `check.sh` (all checks) and `sync-contracts.sh` (copies the adopted tool registry and provider configuration schema into the package). |
 | `docs/contracts/` | Authoritative adopted contracts and schemas. Runtime code reads or derives from these. The one packaged copy, `src/grenslan/contracts/TOOL_SCHEMAS.json`, must stay byte-identical; a test fails if it diverges, and `scripts/sync-contracts.sh` refreshes it. |
 | `docs/implementation/` | Validation record, dependency inventory, this file, and reproducible preflight scripts under `preflight/`. |

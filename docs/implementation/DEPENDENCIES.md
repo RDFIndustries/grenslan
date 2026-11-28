@@ -75,3 +75,51 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 - `pyjwt` (with its `crypto` extra, which uses `cryptography`) is a direct dependency for validating OAuth access tokens. It was already locked at the same version through `mcp`, so no package was added. Only the RS256 and ES256 verification paths are used, with keys supplied as configuration; PyJWT's key-set fetching client is not used.
 - SearXNG (AGPL-3.0) is not a Python dependency of this package. Its distribution and corresponding-source obligations are tracked separately in the validation record.
 - Not yet reviewed: licence texts and notice files that must ship in the container, and security advisories for each pinned version.
+
+## Bundled SearXNG (separate environment)
+
+SearXNG is a separately managed component (AD-423). It is not a Grenslan dependency, and nothing in Grenslan imports it. `packaging/searxng/install.sh` installs its complete source at the pinned commit (`packaging/searxng/SOURCE`) and its own virtual environment from `packaging/searxng/requirements.lock`. The lock is hash-verified, Linux-only, and identical for x86_64 and aarch64, and every version equals the official image of the same commit. Grenslan runs SearXNG only as a confined child process, through its HTTP interface on a Unix socket.
+
+SearXNG itself: version `2026.9.21+df67eb6c2`, commit `df67eb6c2608c5b2f909ed7c42b0a4bd3823f78f`, licence AGPL-3.0-or-later. The installed tree keeps the full source, including `LICENSE`, as the corresponding source for the bundled build (S6).
+
+Its environment, from installed metadata on 2026-11-27 (Python 3.12.3, Linux x86_64):
+
+| Package | Version | Declared licence |
+|---|---|---|
+| annotated-doc | 0.0.5 | MIT |
+| babel | 2.18.0 | BSD-3-Clause |
+| blinker | 1.9.0 | MIT License |
+| certifi | 2026.7.22 | MPL-2.0 |
+| cffi | 2.1.1 | MIT-0 |
+| click | 8.5.0 | BSD-3-Clause |
+| curl_cffi | 0.16.3 | MIT |
+| flask | 3.1.3 | BSD-3-Clause |
+| flask-babel | 4.0.0 | BSD-3-Clause |
+| granian | 2.8.3 | BSD-3-Clause |
+| isodate | 0.7.2 | BSD License |
+| itsdangerous | 2.2.0 | BSD License |
+| jinja2 | 3.1.6 | BSD License |
+| lxml | 6.1.3 | BSD-3-Clause |
+| markdown-it-py | 4.2.0 | MIT License |
+| markupsafe | 3.0.3 | BSD-3-Clause |
+| mdurl | 0.1.2 | MIT License |
+| msgspec | 0.21.1 | BSD-3-Clause |
+| pycparser | 3.0 | BSD-3-Clause |
+| pygments | 2.21.0 | BSD-2-Clause |
+| python-dateutil | 2.9.0.post0 | Dual License |
+| pytz | 2026.3.post1 | MIT |
+| pyyaml | 6.0.3 | MIT |
+| rich | 15.0.0 | MIT |
+| setproctitle | 1.3.7 | BSD-3-Clause |
+| shellingham | 1.5.4 | ISC License |
+| six | 1.17.0 | MIT |
+| typer | 0.27.2 | MIT |
+| typing_extensions | 4.16.0 | PSF-2.0 |
+| valkey | 6.1.1 | MIT |
+| werkzeug | 3.1.8 | BSD-3-Clause |
+| whitenoise | 6.12.0 | MIT |
+
+Still to review before distribution in the container:
+- `curl_cffi` wheels bundle a compiled curl-impersonate (curl with BoringSSL and other libraries), and `lxml` wheels bundle libxml2 and libxslt. Their bundled-library licences must be inventoried from the wheel contents.
+- `python-dateutil` declares a dual licence (Apache-2.0 and BSD-3-Clause), and `certifi`'s CA bundle is MPL-2.0. Both are compatible with redistribution but need their notices.
+
