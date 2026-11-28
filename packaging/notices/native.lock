@@ -1,0 +1,45 @@
+# Notices for compiled code in Grenslan's and SearXNG's environments.
+#
+# "native" lines: a native library compiled into one or more wheels, the
+# source archive its licence files come from, and the wheels (exact
+# versions) that embed it. notices.py collect copies the listed members
+# into native/<archive>/.
+#   native  archive  sha256  url  members  embedded-in
+#
+# "own-code" lines: wheels whose compiled modules contain only their own code
+# (and the system C library), so their own licence files are their notices.
+#   own-code  name==version
+#
+# Wheels with a Rust SBOM are covered by crates.txt. notices.py check fails
+# when an installed wheel with compiled code is not accounted for at its
+# exact version, so updating any such wheel requires reviewing this file.
+#
+# The SearXNG hashes match packaging/searxng/sources.lock. OpenSSL's comes
+# from the SBOM in cryptography's wheel. The rest were computed from the
+# upstream archive (see DEPENDENCIES.md).
+
+native  openssl-4.0.3.tar.gz  325b5c806167c13b40b1ffeadfe0248197c00eccc4cf123ec1e28d2d2fd216d9  https://github.com/openssl/openssl/releases/download/openssl-4.0.3/openssl-4.0.3.tar.gz  LICENSE.txt  cryptography==50.0.2
+
+native  curl-impersonate-2.2.2.tar.gz  ac5dea9ac6f20f8061a26b9f5dea93a80ad9da18d04d24f9fb528ec26a0693bd  https://github.com/lexiforest/curl-impersonate/archive/refs/tags/v2.2.2.tar.gz  LICENSE  curl_cffi==0.16.3
+native  curl-curl-8_21_0.tar.gz  ec753aa6f408a3ca9f0d6d5f7a77417aecd1544db13c03ae5d443612bf367364  https://github.com/curl/curl/archive/curl-8_21_0.tar.gz  COPYING  curl_cffi==0.16.3
+native  boringssl-156c7b75ae9b8c3b3f847acf264f17594c3859fb.zip  450e169b284697c6eafe523cb7679f4221fbe1a0993f773a566c33b188762844  https://github.com/google/boringssl/archive/156c7b75ae9b8c3b3f847acf264f17594c3859fb.zip  LICENSE  curl_cffi==0.16.3
+native  nghttp2-1.63.0.tar.bz2  607b174554d22a828bc532d1d734fe0f729b5d5ed207f2f12e96a62e83f29c55  https://github.com/nghttp2/nghttp2/releases/download/v1.63.0/nghttp2-1.63.0.tar.bz2  COPYING  curl_cffi==0.16.3
+native  ngtcp2-1.20.0.tar.bz2  871ec97ad86803cf312901b0c393b0ee70163e25a87c9b2894d1234341ce4e97  https://github.com/ngtcp2/ngtcp2/releases/download/v1.20.0/ngtcp2-1.20.0.tar.bz2  COPYING  curl_cffi==0.16.3
+native  nghttp3-1.15.0.tar.bz2  c6c491a52804814098e446630e6efc459afc0d3da7952ffe6cbdc0b3f99b2b62  https://github.com/ngtcp2/nghttp3/releases/download/v1.15.0/nghttp3-1.15.0.tar.bz2  COPYING  curl_cffi==0.16.3
+native  brotli-1.2.0.tar.gz  816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec  https://github.com/google/brotli/archive/refs/tags/v1.2.0.tar.gz  LICENSE  curl_cffi==0.16.3
+native  zstd-1.5.7.tar.gz  eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3  https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz  LICENSE,COPYING  curl_cffi==0.16.3
+native  zlib-1.3.1.tar.gz  9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23  https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz  LICENSE  curl_cffi==0.16.3
+native  libidn2-2.3.7.tar.gz  4c21a791b610b9519b9d0e12b8097bf2f359b12f8dd92647611a929e6bfd7d64  https://ftp.gnu.org/gnu/libidn/libidn2-2.3.7.tar.gz  COPYING,COPYING.LESSERv3,COPYINGv2,COPYING.unicode  curl_cffi==0.16.3
+
+native  libxml2-2.14.6.tar.xz  7ce458a0affeb83f0b55f1f4f9e0e55735dbfc1a9de124ee86fb4a66b597203a  https://download.gnome.org/sources/libxml2/2.14/libxml2-2.14.6.tar.xz  Copyright  lxml==6.1.3
+native  libxslt-1.1.43.tar.xz  5a3d6b383ca5afc235b171118e90f5ff6aa27e9fea3303065231a6d403f0183a  https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.43.tar.xz  Copyright  lxml==6.1.3
+native  zlib-1.3.2.tar.gz  bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16  https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz  LICENSE  lxml==6.1.3
+native  libiconv-1.18.tar.gz  3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8  https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz  COPYING.LIB  lxml==6.1.3
+
+native  yaml-0.2.5.tar.gz  c642ae9b75fee120b2d96c712538bd2cf283228d2337df2cf2988e3c02678ef4  https://github.com/yaml/libyaml/releases/download/0.2.5/yaml-0.2.5.tar.gz  License  pyyaml==6.0.3
+native  libyaml-0.2.6.tar.gz  d872e14e3439245919bc0ec2793182e89b4dc6dcc156ef7db47fe3510dee8bc7  https://github.com/yaml/libyaml/archive/refs/tags/0.2.6.tar.gz  License  pyyaml==6.0.4
+native  libffi-3.4.6.tar.gz  9ac790464c1eb2f5ab5809e978a1683e9393131aede72d1b0a0703771d3c6cda  https://github.com/libffi/libffi/archive/v3.4.6.tar.gz  LICENSE  cffi==2.1.1
+
+own-code  markupsafe==3.0.3
+own-code  msgspec==0.21.1
+own-code  setproctitle==1.3.7
