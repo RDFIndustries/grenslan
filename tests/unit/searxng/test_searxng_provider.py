@@ -435,3 +435,58 @@ def test_the_provider_configuration_sample_passes_check_config() -> None:
     config = load_provider_config_file(sample, registry.specs())
     registry.check(config)
     assert config.routes("search") == ("searxng_bundled",)
+
+
+# Operator defaults for safe search and language
+
+
+def defaulted(transport: ScriptedTransport, **defaults: str) -> SearxngProvider:
+    return SearxngProvider(
+        ("wikipedia", "duckduckgo"),
+        ("general",),
+        transport,
+        max_bytes=1_000_000,
+        **defaults,  # type: ignore[arg-type]
+    )
+
+
+async def test_operator_defaults_are_sent_when_the_request_has_none() -> None:
+    transport = ScriptedTransport(reply([]))
+    outcome = await defaulted(transport, default_safe_search="off", default_language="en").search(search(), context())
+    assert transport.forms[0]["safesearch"] == ["0"]
+    assert transport.forms[0]["language"] == ["en"]
+    assert outcome.value is not None
+    details = {d.name: (d.status, d.detail) for d in outcome.value.constraints}
+    assert details["safe_search"] == ("provider_applied", "operator default")
+    assert details["language"] == ("provider_applied", "operator default")
+
+
+async def test_an_explicit_request_value_overrides_the_operator_default() -> None:
+    transport = ScriptedTransport(reply([]))
+    provider_ = defaulted(transport, default_safe_search="off", default_language="en")
+    await provider_.search(search(safe_search="strict", language="de"), context())
+    assert (transport.forms[0]["safesearch"], transport.forms[0]["language"]) == (["2"], ["de"])
+
+
+async def test_without_defaults_nothing_is_sent_for_unset_values() -> None:
+    transport = ScriptedTransport(reply([]))
+    await provider(transport).search(search(), context())
+    assert "safesearch" not in transport.forms[0]
+    assert "language" not in transport.forms[0]
+
+
+def test_defaults_are_read_from_adapter_settings() -> None:
+    adapter = {
+        "categories": ["general"], "engine_timeout_ms": 3000, "install_prefix": "/opt/searxng",
+        "startup_timeout_ms": 5000, "default_safe_search": "off", "default_language": "auto",
+    }  # fmt: skip
+    created = searxng.create(instance(adapter=adapter))
+    assert (created._default_safe_search, created._default_language) == ("off", "auto")
+
+
+@pytest.mark.parametrize("value", ["en_GB", "english", "EN", ""])
+def test_invalid_default_languages_are_refused(value: str) -> None:
+    from jsonschema import Draft202012Validator
+
+    adapter = {"categories": ["general"], "engine_timeout_ms": 3000, "default_language": value}
+    assert list(Draft202012Validator(searxng.SETTINGS_SCHEMA).iter_errors(adapter))

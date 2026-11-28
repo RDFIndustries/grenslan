@@ -38,6 +38,9 @@ providers:
       engine_timeout_ms: 3000
       install_prefix: /opt/grenslan/searxng
       startup_timeout_ms: 9000
+      # Sent with every search that does not set its own value.
+      default_safe_search: "off"
+      default_language: auto
   # An approved external instance instead (needs no install_prefix):
   #
   # searxng_external:

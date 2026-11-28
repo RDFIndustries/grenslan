@@ -10,6 +10,11 @@ Configuration (provider configuration schema, ``search`` and ``adapter_settings`
   Results are kept only if SearXNG reports the requested category for them.
 - ``adapter_settings.engine_timeout_ms``: SearXNG's per-engine timeout. It must
   be below the instance's ``timeout_ms``.
+- ``adapter_settings.default_safe_search`` (``off``, ``moderate``, ``strict``)
+  and ``default_language`` (``auto`` or a tag such as ``en`` or ``en-GB``):
+  optional. When set, they are sent with every search that does not specify
+  its own value. A value in the request takes precedence. When unset, the
+  instance's own defaults apply.
 - Bundled mode also needs ``adapter_settings.install_prefix`` (from
   ``packaging/searxng/install.sh``) and ``startup_timeout_ms``. It needs a
   network scope listing the engines' https destinations, without
@@ -30,7 +35,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlencode, urlsplit
 
 import anyio
@@ -76,7 +81,8 @@ CATEGORIES: Mapping[str, str] = {
     "maps": "map",
 }
 LANGUAGE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
-SAFE_SEARCH = {"off": "0", "moderate": "1", "strict": "2"}
+SafeSearch = Literal["off", "moderate", "strict"]
+SAFE_SEARCH: Mapping[SafeSearch, str] = {"off": "0", "moderate": "1", "strict": "2"}
 RESOLUTION = re.compile("^\\s*(\\d{1,6})\\s*[x\u00d7]\\s*(\\d{1,6})\\s*$")
 MAX_URL_LENGTH = 8192
 UNSUPPORTED_CONSTRAINTS = (
@@ -110,6 +116,8 @@ SETTINGS_SCHEMA: Mapping[str, Any] = {
         "engine_timeout_ms": {"type": "integer", "minimum": 100},
         "install_prefix": {"type": "string", "pattern": "^/", "maxLength": 4096},
         "startup_timeout_ms": {"type": "integer", "minimum": 1000},
+        "default_safe_search": {"enum": sorted(SAFE_SEARCH)},
+        "default_language": {"type": "string", "pattern": "^(auto|[a-z]{2,3}(-[A-Z]{2})?)$"},
     },
 }
 
@@ -289,8 +297,17 @@ def _discovery(rank: int, result: Mapping[str, Any], category: Category) -> Disc
 
 class SearxngProvider:
     def __init__(
-        self, engines: tuple[str, ...], categories: tuple[Category, ...], transport: Transport, max_bytes: int
-    ):
+        self,
+        engines: tuple[str, ...],
+        categories: tuple[Category, ...],
+        transport: Transport,
+        max_bytes: int,
+        *,
+        default_safe_search: SafeSearch | None = None,
+        default_language: str | None = None,
+    ) -> None:
+        self._default_safe_search = default_safe_search
+        self._default_language = default_language
         self._engines = engines
         self._categories = categories
         self._transport = transport
@@ -341,9 +358,15 @@ class SearxngProvider:
                 dispositions.append(ConstraintDisposition("language", "provider_applied"))
             else:
                 dispositions.append(ConstraintDisposition("language", "unsupported", "not a supported language tag"))
+        elif self._default_language is not None:
+            fields.append(("language", self._default_language))
+            dispositions.append(ConstraintDisposition("language", "provider_applied", "operator default"))
         if request.safe_search is not None:
             fields.append(("safesearch", SAFE_SEARCH[request.safe_search]))
             dispositions.append(ConstraintDisposition("safe_search", "provider_applied"))
+        elif self._default_safe_search is not None:
+            fields.append(("safesearch", SAFE_SEARCH[self._default_safe_search]))
+            dispositions.append(ConstraintDisposition("safe_search", "provider_applied", "operator default"))
         for name in UNSUPPORTED_CONSTRAINTS:
             if getattr(request, name) not in (None, ()):
                 dispositions.append(ConstraintDisposition(name, "unsupported"))
@@ -484,7 +507,14 @@ def create(instance: InstanceSettings) -> SearxngProvider:
         transport = _bundled_transport(instance, adapter, engines, engine_timeout_ms, timeout_ms)
     else:
         transport = _external_transport(instance, adapter, timeout_ms)
-    return SearxngProvider(engines, categories, transport, max_bytes)
+    return SearxngProvider(
+        engines,
+        categories,
+        transport,
+        max_bytes,
+        default_safe_search=adapter.get("default_safe_search"),
+        default_language=adapter.get("default_language"),
+    )
 
 
 def _bundled_transport(
