@@ -119,7 +119,61 @@ Its environment, from installed metadata on 2026-11-27 (Python 3.12.3, Linux x86
 | werkzeug | 3.1.8 | BSD-3-Clause |
 | whitenoise | 6.12.0 | MIT |
 
-Still to review before distribution in the container:
-- `curl_cffi` wheels bundle a compiled curl-impersonate (curl with BoringSSL and other libraries), and `lxml` wheels bundle libxml2 and libxslt. Their bundled-library licences must be inventoried from the wheel contents.
-- `python-dateutil` declares a dual licence (Apache-2.0 and BSD-3-Clause), and `certifi`'s CA bundle is MPL-2.0. Both are compatible with redistribution but need their notices.
+### Libraries compiled into SearXNG's wheels
 
+Several wheels in the lock contain compiled third-party libraries, statically linked, with no separate shared objects. Each extension module links only the system C runtime dynamically (`libc`, `libm`, `libpthread`, `librt`, `libdl`, `libgcc_s`). The libraries below were identified on 2026-11-27 by three means:
+- the build paths, version strings and exported symbols in the installed x86_64 binaries;
+- the wheels' own licence files and SBOM;
+- the build pins of the releases they come from.
+
+**curl_cffi 0.16.3:** `_wrapper.abi3.so` is libcurl-impersonate v2.2.2 (github.com/lexiforest/curl-impersonate), pinned in curl_cffi's `Makefile`. The wheel ships only curl_cffi's own MIT `LICENSE`.
+
+| Library | Version | Licence |
+|---|---|---|
+| curl (with curl-impersonate patches) | 8.21.0 | curl (MIT-style) |
+| BoringSSL | commit `156c7b75ae9b8c3b3f847acf264f17594c3859fb` | Apache-2.0, with ISC and OpenSSL/SSLeay-derived portions |
+| nghttp2 | 1.63.0 | MIT |
+| ngtcp2 | 1.20.0 | MIT |
+| nghttp3 | 1.15.0 | MIT |
+| brotli | 1.2.0 | MIT |
+| zstd | 1.5.7 | BSD-3-Clause (dual with GPL-2.0; used under BSD) |
+| zlib | 1.3.1 | Zlib |
+| libidn2 | 2.3.7 | LGPL-3.0-or-later OR GPL-2.0-or-later |
+| libunistring subset, embedded in libidn2 | from libidn2 2.3.7 | LGPL-3.0-or-later OR GPL-2.0-or-later |
+
+**lxml 6.1.3:** the wheel's `LICENSES.txt` lists the bundled libraries and their licences.
+
+| Library | Version | Licence |
+|---|---|---|
+| libxml2 | 2.14.6 | MIT |
+| libxslt and libexslt | 1.1.43 | MIT |
+| zlib | 1.3.2 | Zlib |
+| GNU libiconv | 1.18 | LGPL-2.1-or-later |
+
+**Other wheels:**
+
+| Wheel | Bundled library | Licence |
+|---|---|---|
+| granian 2.8.3 | 147 Rust crates, listed in the wheel's CycloneDX SBOM (`granian-2.8.3.dist-info/sboms/`) | All permissive: MIT and/or Apache-2.0 (most), plus BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Unlicense-or-MIT, Unicode-3.0 and Apache-2.0 WITH LLVM-exception. Every crate declares a licence. |
+| pyyaml 6.0.3 | libyaml 0.2.5 | MIT |
+| cffi 2.1.1 | libffi (the binary records no version) | MIT |
+
+msgspec, markupsafe and setproctitle contain only their own code.
+
+### Distribution obligations
+
+- **Permissive components** (MIT, BSD, Apache-2.0, ISC, Zlib, curl and the Rust crates) require their copyright and licence notices to accompany the binaries. The wheels ship only their own package's licence, so the container must carry a third-party notices file covering the libraries above. That includes the Granian crate notices and the BoringSSL `LICENSE`. Apache-2.0 components also need any `NOTICE` files.
+- **`python-dateutil`** (Apache-2.0 and BSD-3-Clause) and **`certifi`** (MPL-2.0, unmodified CA bundle) need their notices. MPL-2.0 also requires the source to be available, and it is the published package.
+- **SearXNG** (AGPL-3.0-or-later): the complete source is installed alongside it (S6).
+- **LGPL components statically linked:** libidn2 and its libunistring subset in curl_cffi, and GNU libiconv in lxml. The LGPL permits static linking, but anyone receiving the binary must be able to rebuild it with a modified version of the library. In practice that means providing:
+  - the library's source;
+  - the source and build scripts of the program it is linked into (curl_cffi and curl-impersonate, lxml);
+  - the LGPL text.
+
+  The official SearXNG image ships the same wheels. **How Grenslan meets this obligation awaits maintainer review**; see "Open licensing decision" below.
+
+### Open licensing decision
+
+The options are:
+1. **Provide the corresponding source with each release.** Publish the source archives of libidn2 2.3.7, GNU libiconv 1.18, curl-impersonate v2.2.2 (with the dependency sources its build fetches), curl_cffi 0.16.3 and lxml 6.1.3 at the same place as the container image, and list them in the container's notices. This matches the source availability already decided for SearXNG (S6) and keeps the wheels identical to the official image.
+2. **Rebuild the two wheels without the LGPL libraries.** Build lxml against glibc's iconv, and build curl-impersonate without IDN support or against a shared system libidn2. This removes static LGPL linking, but it means maintaining two native builds that differ from the official image's.

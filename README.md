@@ -82,7 +82,7 @@ The baseline defines 120 acceptance criteria. Conformance will be established th
 
 Original Grenslan code is licensed under the [Apache License, Version 2.0](LICENSE).
 
-Third-party components retain their respective licenses. The planned bundled SearXNG component is licensed under AGPL-3.0 and runs as a separate process through its service interface. No third-party bundle is claimed to be distributed by this initial repository.
+Third-party components retain their respective licenses. The bundled SearXNG component is licensed under AGPL-3.0-or-later and runs as a separate, confined process through its service interface. The repository contains no third-party binaries: `packaging/searxng/install.sh` fetches SearXNG's pinned source and hash-locked dependencies at install time. The [dependency inventory](docs/implementation/DEPENDENCIES.md) lists every component and the libraries compiled into its wheels, with their licences.
 
 Before distributing a reference image or release, the project will publish applicable third-party license texts, copyright notices, component inventory and required corresponding-source information in both the repository and container. The README will link to those materials as they become available.
 
