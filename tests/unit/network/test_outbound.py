@@ -117,12 +117,46 @@ def test_public_web_does_not_admit_other_https_ports(url: str) -> None:
         scope(public_web=True, allow_outbound_http=True).check_url(url)
 
 
-def test_public_web_admits_plain_http_only_on_port_80_and_only_when_allowed() -> None:
-    with pytest.raises(DestinationDenied, match="plain http"):
-        scope(public_web=True).check_url("http://anything.test/")
-    assert scope(public_web=True, allow_outbound_http=True).check_url("http://anything.test/").port == 80
+@pytest.mark.parametrize("allow_outbound_http", [False, True])
+def test_public_web_never_admits_plain_http(allow_outbound_http: bool) -> None:
+    with pytest.raises(DestinationDenied):
+        scope(public_web=True, allow_outbound_http=allow_outbound_http).check_url("http://anything.test/")
+
+
+def test_plain_http_is_limited_to_listed_local_network_destinations() -> None:
+    local = dest("printer.lan", 80)
+    assert scope(local, allow_outbound_http=True).check_url("http://printer.lan/").allow_private
+    with pytest.raises(DestinationDenied, match="plain http is not permitted"):
+        scope(local).check_url("http://printer.lan/")
+    with pytest.raises(DestinationDenied, match="local network"):
+        scope(dest("api.example.test", 80, private=False), allow_outbound_http=True).check_url(
+            "http://api.example.test/"
+        )
+
+
+async def test_plain_http_destinations_may_not_resolve_to_public_addresses() -> None:
+    resolver = StaticResolver({"printer.lan": ["93.184.215.14"]})
+    backend = PolicyBackend(scope(dest("printer.lan", 80), allow_outbound_http=True), resolver)
+    backend._inner = _NeverConnect()  # type: ignore[assignment]
+    with pytest.raises(DestinationDenied, match="prohibited address"):
+        await backend.connect_tcp("printer.lan", 80)
+
+
+async def test_connections_to_plain_http_destinations_need_outbound_http() -> None:
+    resolver = StaticResolver({"printer.lan": LOOPBACK})
+    backend = PolicyBackend(scope(dest("printer.lan", 80)), resolver)
+    backend._inner = _NeverConnect()  # type: ignore[assignment]
     with pytest.raises(DestinationDenied, match="not an approved destination"):
-        scope(public_web=True, allow_outbound_http=True).check_url("http://anything.test:8080/")
+        await backend.connect_tcp("printer.lan", 80)
+    assert resolver.lookups == []
+
+
+async def test_an_https_destination_allowing_private_addresses_may_still_be_public() -> None:
+    resolver = StaticResolver({"api.example.test": ["93.184.215.14"]})
+    backend = PolicyBackend(scope(dest("api.example.test", 443, "https")), resolver)
+    backend._inner = _Reached()  # type: ignore[assignment]
+    with pytest.raises(_ConnectionAttempted, match=r"93\.184\.215\.14"):  # the address check passed
+        await backend.connect_tcp("api.example.test", 443)
 
 
 def test_a_listed_destination_may_use_another_port_alongside_public_web() -> None:
@@ -153,10 +187,9 @@ async def test_names_resolving_to_private_addresses_are_denied_without_connectin
     server: FixtureServer, answers: list[str]
 ) -> None:
     resolver = StaticResolver({"fixture.test": answers})
-    policy = scope(dest("fixture.test", server.port, private=False), allow_outbound_http=True)
-    async with client(policy, resolver) as outbound:
-        with pytest.raises(DestinationDenied, match="prohibited address"):
-            await outbound.request("GET", f"http://fixture.test:{server.port}/", timeout=5)
+    backend = PolicyBackend(scope(dest("fixture.test", server.port, "https", private=False)), resolver)
+    with pytest.raises(DestinationDenied, match="prohibited address"):
+        await backend.connect_tcp("fixture.test", server.port)
     assert server.routes.seen == []
 
 
@@ -167,7 +200,7 @@ async def test_public_web_does_not_reach_private_addresses() -> None:
         await backend.connect_tcp("rebound.test", 443)
 
 
-@pytest.mark.parametrize(("port", "allow_outbound_http"), [(8443, True), (80, False)])
+@pytest.mark.parametrize(("port", "allow_outbound_http"), [(8443, True), (80, False), (80, True)])
 async def test_the_backend_admits_public_web_only_on_standard_ports(port: int, allow_outbound_http: bool) -> None:
     resolver = StaticResolver({"anything.test": ["93.184.215.14"]})
     backend = PolicyBackend(scope(public_web=True, allow_outbound_http=allow_outbound_http), resolver)
@@ -180,6 +213,15 @@ async def test_the_backend_admits_public_web_only_on_standard_ports(port: int, a
 class _NeverConnect:
     async def connect_tcp(self, *args: Any) -> None:
         raise AssertionError("a connection was attempted")
+
+
+class _ConnectionAttempted(Exception):
+    pass
+
+
+class _Reached:
+    async def connect_tcp(self, address: str, *args: Any) -> None:
+        raise _ConnectionAttempted(address)
 
 
 async def test_metadata_addresses_are_denied_even_for_private_destinations() -> None:
@@ -467,7 +509,8 @@ class _Inner:
 @pytest.mark.parametrize("peer", [("127.0.0.2", 8080), ("127.0.0.1", 9090)])
 async def test_a_connection_whose_peer_differs_from_the_checked_address_is_closed(peer: tuple[str, int]) -> None:
     stream = _Stream(peer)
-    backend = PolicyBackend(scope(dest("fixture.test", 8080)), StaticResolver({"fixture.test": LOOPBACK}))
+    policy = scope(dest("fixture.test", 8080), allow_outbound_http=True)
+    backend = PolicyBackend(policy, StaticResolver({"fixture.test": LOOPBACK}))
     backend._inner = _Inner(stream)  # type: ignore[assignment]
     with pytest.raises(DestinationDenied, match="peer"):
         await backend.connect_tcp("fixture.test", 8080)

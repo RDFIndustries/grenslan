@@ -248,6 +248,16 @@ def test_plain_http_endpoint_requires_scope_permission() -> None:
     assert_problem(config, "/providers/academic_one/endpoint/url", "plain http")
 
 
+def test_plain_http_destinations_must_be_local_network_destinations() -> None:
+    config = connected_config()
+    destination = config["network_scopes"]["academic_api"]["destinations"][0]
+    destination.update(scheme="http", port=80, allow_private_address=False)
+    config["network_scopes"]["academic_api"]["allow_outbound_http"] = True
+    assert_problem(config, "/network_scopes/academic_api/destinations/0", "local network")
+    destination["allow_private_address"] = True
+    validate_provider_config(config, IMPLEMENTATIONS)
+
+
 @pytest.mark.parametrize("mode", ["offline", "internal_only"])
 def test_isolated_modes_deny_public_web_scopes(mode: str) -> None:
     config = connected_config()

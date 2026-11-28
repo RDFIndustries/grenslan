@@ -116,6 +116,13 @@ class _Checker:
         self.problems.append(ConfigProblem(location, message))
 
     def run(self) -> list[ConfigProblem]:
+        for scope_id, scope in self.data["network_scopes"].items():
+            for index, destination in enumerate(scope["destinations"]):
+                if destination["scheme"] == "http" and not destination.get("allow_private_address", False):
+                    self.problem(
+                        f"/network_scopes/{scope_id}/destinations/{index}",
+                        "plain http is permitted only to local network destinations; set allow_private_address",
+                    )
         for provider_id, provider in self.data["providers"].items():
             self.provider(f"/providers/{provider_id}", provider)
         for credential_id, credential in self.data["credential_refs"].items():

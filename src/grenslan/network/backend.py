@@ -66,11 +66,11 @@ class PolicyBackend(httpcore2.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options: Iterable[Any] | None = None,
     ) -> httpcore2.AsyncNetworkStream:
-        allow_private = self._policy.connection_allows_private(host, port)
+        rule = self._policy.connection_rule(host, port)
         answers = await self._answers(host, port)
         if not answers:
             raise OutboundError("unresolved", f"{host!r} has no address")
-        if any(not NetworkPolicy.address_allowed(answer, allow_private=allow_private) for answer in answers):
+        if any(not NetworkPolicy.address_allowed(answer, rule) for answer in answers):
             raise DestinationDenied(f"{host!r} resolves to a prohibited address")
         failure: Exception | None = None
         for answer in answers:

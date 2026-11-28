@@ -2,12 +2,14 @@
 
 A scope (``network_scopes`` in the provider configuration) lists approved
 ``scheme://host:port`` destinations and may admit the public web, which means
-any host on the standard port only: 443 for https, and 80 for plain http.
-Any other port must be a listed destination. Plain HTTP needs
-``allow_outbound_http``. A listed destination with
-``allow_private_address`` may resolve to private, loopback or link-local
-addresses; every other destination must resolve only to public addresses.
-Metadata, unspecified, multicast and broadcast addresses are never reachable.
+any host over https on port 443. Any other port must be a listed destination.
+
+A listed destination with ``allow_private_address`` may resolve to private,
+loopback or link-local addresses; every other destination must resolve only
+to public addresses. Plain http is for the local network only: it needs
+``allow_outbound_http``, a listed destination with ``allow_private_address``,
+and addresses that are not public. The public web never admits it. Metadata,
+unspecified, multicast and broadcast addresses are never reachable.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from grenslan.network.addresses import IPAddress, address_permitted, never_reachable
@@ -37,6 +39,11 @@ def normalize_host(host: str) -> str:
         return host.encode("idna").decode("ascii")
     except UnicodeError as error:
         raise DestinationDenied("the host name is invalid") from error
+
+
+AddressRule = Literal["public", "any", "local"]
+"""Which resolved addresses a connection may use: only public ones, public or
+private, or only non-public ones (plain http on the local network)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,31 +105,40 @@ class NetworkPolicy:
         if scheme == "http" and not self.allow_outbound_http:
             raise DestinationDenied("plain http is not permitted by the network scope")
         listed = [private for (s, h, p, private) in self.destinations if (s, h, p) == (scheme, host, port)]
+        if scheme == "http":
+            if not any(listed):
+                raise DestinationDenied("plain http is permitted only to listed local network destinations")
+            return Target(scheme, host, port, True)
         if listed:
             return Target(scheme, host, port, any(listed))
-        if self.public_web and port == DEFAULT_PORTS[scheme]:
+        if self.public_web and port == DEFAULT_PORTS["https"]:
             return Target(scheme, host, port, False)
         raise DestinationDenied(f"{scheme}://{host}:{port} is not an approved destination")
 
-    def connection_allows_private(self, host: str, port: int) -> bool:
-        """Whether a connection to ``host:port`` may use a non-public address; denies unknown targets.
+    def connection_rule(self, host: str, port: int) -> AddressRule:
+        """The addresses a connection to ``host:port`` may use; denies unknown targets.
 
         This is the check made where connections are opened, independent of
-        any URL check made before the request.
+        any URL check made before the request. A connection does not carry
+        its scheme, so a host and port listed for plain http is held to
+        local addresses whatever the scheme.
         """
         host = normalize_host(host)
-        listed = [private for (_, h, p, private) in self.destinations if (h, p) == (host, port)]
-        if not listed and not self._public_web_port(port):
-            raise DestinationDenied(f"{host}:{port} is not an approved destination")
-        return any(listed)
-
-    def _public_web_port(self, port: int) -> bool:
-        return self.public_web and (
-            port == DEFAULT_PORTS["https"] or (self.allow_outbound_http and port == DEFAULT_PORTS["http"])
-        )
+        listed = [(s, private) for (s, h, p, private) in self.destinations if (h, p) == (host, port)]
+        if any(scheme == "http" for scheme, _ in listed):
+            if not (self.allow_outbound_http and any(private for scheme, private in listed if scheme == "http")):
+                raise DestinationDenied(f"{host}:{port} is not an approved destination")
+            return "local"
+        if listed:
+            return "any" if any(private for _, private in listed) else "public"
+        if self.public_web and port == DEFAULT_PORTS["https"]:
+            return "public"
+        raise DestinationDenied(f"{host}:{port} is not an approved destination")
 
     @staticmethod
-    def address_allowed(address: IPAddress, *, allow_private: bool) -> bool:
+    def address_allowed(address: IPAddress, rule: AddressRule) -> bool:
         if never_reachable(address):
             return False
-        return allow_private or address_permitted(address)
+        if rule == "local":
+            return not address_permitted(address)
+        return rule == "any" or address_permitted(address)
