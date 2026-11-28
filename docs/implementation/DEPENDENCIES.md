@@ -156,7 +156,7 @@ Several wheels in the lock contain compiled third-party libraries, statically li
 |---|---|---|
 | granian 2.8.3 | 147 Rust crates, listed in the wheel's CycloneDX SBOM (`granian-2.8.3.dist-info/sboms/`) | All permissive: MIT and/or Apache-2.0 (most), plus BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Unlicense-or-MIT, Unicode-3.0 and Apache-2.0 WITH LLVM-exception. Every crate declares a licence. |
 | pyyaml 6.0.3 | libyaml 0.2.5 | MIT |
-| cffi 2.1.1 | libffi (the binary records no version) | MIT |
+| cffi 2.1.1 | libffi 3.4.6, the version cffi's Linux release workflow builds | MIT |
 
 msgspec, markupsafe and setproctitle contain only their own code.
 
@@ -170,10 +170,22 @@ msgspec, markupsafe and setproctitle contain only their own code.
   - the source and build scripts of the program it is linked into (curl_cffi and curl-impersonate, lxml);
   - the LGPL text.
 
-  The official SearXNG image ships the same wheels. **How Grenslan meets this obligation awaits maintainer review**; see "Open licensing decision" below.
+  The official SearXNG image ships the same wheels. Grenslan meets this obligation by publishing the source, as decided below.
 
-### Open licensing decision
+### Corresponding source for compiled libraries
 
-The options are:
-1. **Provide the corresponding source with each release.** Publish the source archives of libidn2 2.3.7, GNU libiconv 1.18, curl-impersonate v2.2.2 (with the dependency sources its build fetches), curl_cffi 0.16.3 and lxml 6.1.3 at the same place as the container image, and list them in the container's notices. This matches the source availability already decided for SearXNG (S6) and keeps the wheels identical to the official image.
-2. **Rebuild the two wheels without the LGPL libraries.** Build lxml against glibc's iconv, and build curl-impersonate without IDN support or against a shared system libidn2. This removes static LGPL linking, but it means maintaining two native builds that differ from the official image's.
+Decided by the maintainer on 2026-11-27: each release publishes the source archives of the compiled libraries, at the same location as the container image. That covers the LGPL obligation for libidn2, libunistring and libiconv, and it lets anyone audit or rebuild those packages. The archives are:
+- libidn2 2.3.7 and GNU libiconv 1.18;
+- curl-impersonate v2.2.2, with every dependency source its build fetches;
+- the curl_cffi 0.16.3 and lxml 6.1.3 source distributions.
+
+The packages themselves stay identical to the official SearXNG image. The container's notices say where the archives are. `packaging/searxng/sources.lock` pins each archive's URL and SHA-256 hash, and `packaging/searxng/fetch-sources.sh` downloads and verifies them for a release.
+
+The lock also covers the source distributions of the other packages with compiled code (granian, pyyaml, cffi, msgspec, markupsafe, setproctitle) and the C libraries they embed (libyaml 0.2.5, libffi 3.4.6). That gives 24 archives, about 108 MB. The Rust crates in Granian are permissively licensed and are not archived. Granian's source distribution records their exact versions in `Cargo.lock`, and its SBOM lists them.
+
+Verification on 2026-11-27:
+- All 24 archives downloaded and matched their pinned hashes, including the nine whose hashes come from curl-impersonate's own build file.
+- The libidn2 and libiconv archives passed `gpgv` against the GNU keyring (signed by Simon Josefsson and Bruno Haible).
+- A second run kept every valid file. A tampered file was downloaded again.
+- A wrong pinned hash stopped the run with status 1 and left nothing behind.
+- A lock entry naming `../x` was refused.

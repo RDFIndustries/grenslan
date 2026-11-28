@@ -1,0 +1,42 @@
+# Source archives for the compiled code in SearXNG's environment
+# (docs/implementation/DEPENDENCIES.md, "Corresponding source for compiled
+# libraries"). Each release publishes these archives alongside the container
+# image. fetch-sources.sh downloads them and verifies each hash.
+#
+# Hash sources:
+# - Python source distributions: from PyPI.
+# - curl-impersonate's dependencies: from its own CMakeLists.txt at v2.2.2.
+# - libidn2 and libiconv: computed after checking their GNU signatures.
+# - Others: computed from the upstream release archive.
+#
+# file  sha256  url
+
+# curl_cffi 0.16.3 and the libcurl-impersonate v2.2.2 it embeds
+curl_cffi-0.16.3.tar.gz  d15d0c2a35f2d75bec430c28946c2a833f421c85773bdb0795182cc5c515665b  https://files.pythonhosted.org/packages/82/e1/730125c43e3e331d98e17af3cb310ba526b3f1101b7635ca23d976ebfcf5/curl_cffi-0.16.3.tar.gz
+curl-impersonate-2.2.2.tar.gz  ac5dea9ac6f20f8061a26b9f5dea93a80ad9da18d04d24f9fb528ec26a0693bd  https://github.com/lexiforest/curl-impersonate/archive/refs/tags/v2.2.2.tar.gz
+curl-curl-8_21_0.tar.gz  ec753aa6f408a3ca9f0d6d5f7a77417aecd1544db13c03ae5d443612bf367364  https://github.com/curl/curl/archive/curl-8_21_0.tar.gz
+boringssl-156c7b75ae9b8c3b3f847acf264f17594c3859fb.zip  450e169b284697c6eafe523cb7679f4221fbe1a0993f773a566c33b188762844  https://github.com/google/boringssl/archive/156c7b75ae9b8c3b3f847acf264f17594c3859fb.zip
+nghttp2-1.63.0.tar.bz2  607b174554d22a828bc532d1d734fe0f729b5d5ed207f2f12e96a62e83f29c55  https://github.com/nghttp2/nghttp2/releases/download/v1.63.0/nghttp2-1.63.0.tar.bz2
+ngtcp2-1.20.0.tar.bz2  871ec97ad86803cf312901b0c393b0ee70163e25a87c9b2894d1234341ce4e97  https://github.com/ngtcp2/ngtcp2/releases/download/v1.20.0/ngtcp2-1.20.0.tar.bz2
+nghttp3-1.15.0.tar.bz2  c6c491a52804814098e446630e6efc459afc0d3da7952ffe6cbdc0b3f99b2b62  https://github.com/ngtcp2/nghttp3/releases/download/v1.15.0/nghttp3-1.15.0.tar.bz2
+brotli-1.2.0.tar.gz  816c96e8e8f193b40151dad7e8ff37b1221d019dbcb9c35cd3fadbfe6477dfec  https://github.com/google/brotli/archive/refs/tags/v1.2.0.tar.gz
+zstd-1.5.7.tar.gz  eb33e51f49a15e023950cd7825ca74a4a2b43db8354825ac24fc1b7ee09e6fa3  https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-1.5.7.tar.gz
+zlib-1.3.1.tar.gz  9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23  https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+libidn2-2.3.7.tar.gz  4c21a791b610b9519b9d0e12b8097bf2f359b12f8dd92647611a929e6bfd7d64  https://ftp.gnu.org/gnu/libidn/libidn2-2.3.7.tar.gz
+
+# lxml 6.1.3 and the libraries it embeds
+lxml-6.1.3.tar.gz  45222d94ddd511536f3b2f7d9deae3b2339b4ce0f075f1ca25703b07cad9dd21  https://files.pythonhosted.org/packages/23/ad/28ecd7cb894d172f3c9c80a075eeeb2017ac62e3632cee05a5f9493547eb/lxml-6.1.3.tar.gz
+libxml2-2.14.6.tar.xz  7ce458a0affeb83f0b55f1f4f9e0e55735dbfc1a9de124ee86fb4a66b597203a  https://download.gnome.org/sources/libxml2/2.14/libxml2-2.14.6.tar.xz
+libxslt-1.1.43.tar.xz  5a3d6b383ca5afc235b171118e90f5ff6aa27e9fea3303065231a6d403f0183a  https://download.gnome.org/sources/libxslt/1.1/libxslt-1.1.43.tar.xz
+zlib-1.3.2.tar.gz  bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16  https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz
+libiconv-1.18.tar.gz  3b08f5f4f9b4eb82f151a7040bfd6fe6c6fb922efe4b1659c66ea933276965e8  https://ftp.gnu.org/gnu/libiconv/libiconv-1.18.tar.gz
+
+# Other packages with compiled code, and the C libraries they embed
+granian-2.8.3.tar.gz  482315abc9dca49051e4246a0bf2f09a1349a9a8d554111657559e038c91a6c4  https://files.pythonhosted.org/packages/bb/42/bba335017a43cfe33da63685f341a9e21a9725e02f7f42a7be812234e1c4/granian-2.8.3.tar.gz
+pyyaml-6.0.3.tar.gz  d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f  https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
+yaml-0.2.5.tar.gz  c642ae9b75fee120b2d96c712538bd2cf283228d2337df2cf2988e3c02678ef4  https://github.com/yaml/libyaml/releases/download/0.2.5/yaml-0.2.5.tar.gz
+cffi-2.1.1.tar.gz  dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be  https://files.pythonhosted.org/packages/9e/ef/008a1939e372c06329a3fce4279c02f328488f3526744906eeec3da7ad5f/cffi-2.1.1.tar.gz
+libffi-3.4.6.tar.gz  9ac790464c1eb2f5ab5809e978a1683e9393131aede72d1b0a0703771d3c6cda  https://github.com/libffi/libffi/archive/v3.4.6.tar.gz
+msgspec-0.21.1.tar.gz  2313508e394b0d208f8f56892ca9b2799e2561329de9763b19619595a6c0f72c  https://files.pythonhosted.org/packages/e3/60/f79b9b013a16fa3a58350c9295ddc6789f2e335f36ea61ed10a21b215364/msgspec-0.21.1.tar.gz
+markupsafe-3.0.3.tar.gz  722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698  https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz
+setproctitle-1.3.7.tar.gz  bc2bc917691c1537d5b9bca1468437176809c7e11e5694ca79a9ca12345dcb9e  https://files.pythonhosted.org/packages/8d/48/49393a96a2eef1ab418b17475fb92b8fcfad83d099e678751b05472e69de/setproctitle-1.3.7.tar.gz
