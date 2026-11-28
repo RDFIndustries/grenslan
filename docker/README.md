@@ -10,6 +10,7 @@ The development and reference image runs Grenslan's service with bundled SearXNG
 | `seccomp.py` | Regenerates `seccomp.json`. Run with `--check` to verify it is current. |
 | `NOTICE.md` | Installed as `/usr/share/doc/grenslan/NOTICE.md`, with all third-party notices. |
 | `smoke-test.sh` | Isolation smoke test for a built image. |
+| `offline-install-test.sh` | Installs both environments with no network, from a hash-verified wheelhouse and a local SearXNG mirror. |
 
 ## Build
 
@@ -53,11 +54,11 @@ Without the profile, Grenslan still starts, but bundled SearXNG is `unavailable`
 provider searxng_bundled: initializing -> unavailable (provider_unavailable: SearXNG cannot be confined on this host: ... Operation not permitted. In a container, run it with Grenslan's seccomp profile (docker/README.md).)
 ```
 
-Hosts that restrict unprivileged user namespaces in other ways also stop confinement, with the same fail-closed result:
-- the `user.max_user_namespaces=0` sysctl;
-- AppArmor's `kernel.apparmor_restrict_unprivileged_userns=1`, as on Ubuntu 23.10 and later.
+**Known limitation: Ubuntu 23.10 and later.** These hosts set `kernel.apparmor_restrict_unprivileged_userns=1` by default. Docker's default AppArmor profile does not permit user namespaces, so bundled SearXNG is expected to be `unavailable` there even with the seccomp profile. It fails closed. A supported workaround is still being worked on; the most likely candidate is a Grenslan AppArmor profile that adds the permission. Until then, these options remain:
+- an external SearXNG instance (`examples/`, external mode);
+- a host where the restriction is off. Turning it off host-wide is not recommended.
 
-Such hosts have not been tested yet.
+Hosts with `user.max_user_namespaces=0` fail closed the same way.
 
 ## Smoke test
 

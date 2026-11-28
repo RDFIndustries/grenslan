@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import sys
@@ -97,4 +98,36 @@ async def test_an_installation_of_another_build_is_refused(tmp_path: Path, recor
     expected = dataclasses.replace(settings(prefix, tmp_path / "run"), expected_commit="df67eb6c" + "0" * 32)
     with pytest.raises(SearxngUnavailable, match="not the expected build"):
         await BundledSearxng(expected, POLICY).start()
+    assert list((tmp_path / "run").iterdir()) == []
+
+
+async def test_output_after_startup_is_discarded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SearXNG's diagnostics can contain query text, so nothing it writes once healthy is kept."""
+    (tmp_path / "run").mkdir()
+    ready = tmp_path / "ready"
+    child = (
+        "import pathlib, sys, time\n"
+        "print('starting up', flush=True)\n"
+        f"pathlib.Path({str(ready)!r}).touch()\n"
+        "time.sleep(0.5)\n"
+        "for _ in range(20):\n"
+        "    print('query text: private research topic', flush=True)\n"
+        "time.sleep(30)\n"
+    )
+
+    def command(self: BundledSearxng, runtime: Path, *extra: str) -> list[str]:
+        return [sys.executable, "-c", "pass" if "--probe" in extra else child]
+
+    async def healthy(self: BundledSearxng) -> bool:
+        return ready.exists()
+
+    monkeypatch.setattr(BundledSearxng, "_confine", command)
+    monkeypatch.setattr(BundledSearxng, "healthy", healthy)
+    bundled = BundledSearxng(settings(fake_install(tmp_path / "install"), tmp_path / "run"), POLICY)
+    await bundled.start()
+    try:
+        await asyncio.sleep(1.5)
+        assert bytes(bundled._startup_output) == b""
+    finally:
+        await bundled.stop()
     assert list((tmp_path / "run").iterdir()) == []

@@ -13,12 +13,15 @@ ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1a4bf9a0c53a3deb1b5
 
 FROM ${UV_IMAGE} AS uv
 
-FROM ${PYTHON_IMAGE} AS build
+# Build tooling only; also used by docker/offline-install-test.sh.
+FROM ${PYTHON_IMAGE} AS tools
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_NO_CACHE=1 UV_PYTHON_DOWNLOADS=never
+
+FROM tools AS build
 WORKDIR /src
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src

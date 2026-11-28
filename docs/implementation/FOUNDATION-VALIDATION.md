@@ -571,7 +571,7 @@ Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1035
 F04 is complete for review. The SearXNG provider (F05) adds the first production implementation and manifest.
 
 
-### 6.4 F05: outbound enforcement and SearXNG (in progress)
+### 6.4 F05: outbound enforcement and SearXNG (complete for review)
 
 SearXNG's outbound behaviour was examined on 2026-11-27 as directed. The findings and the bundled-process design are in `docs/implementation/SEARXNG-EGRESS.md`. The maintainer approved option A and decisions S1–S6, and the tracker-rule decisions T1–T5, on 2026-11-27.
 
@@ -580,7 +580,7 @@ Connection-level outbound enforcement, used by every provider for external reque
 | Component | Behaviour | Basis |
 |---|---|---|
 | `network/addresses.py` | Only globally routable unicast addresses are public. IPv6 forms carrying an IPv4 address (mapped, NAT64, 6to4, Teredo) are also judged by the embedded address. Metadata (`169.254.169.254`, `fd00:ec2::254`), unspecified, multicast and broadcast addresses are never reachable, even for a destination that allows private addresses. | AD-400, PC-022 |
-| `network/policy.py` | Applies a provider network scope. A URL must be absolute `http` or `https`, carry no user information, and match a listed `scheme://host:port` destination (host compared case-insensitively, without a trailing dot, IDNA-encoded, IP literals in canonical form) or, with `public_web`, any host on the standard port: 443 for https, or 80 for plain http. Other ports must be listed. Plain `http` needs `allow_outbound_http`. Only a listed destination with `allow_private_address` may resolve to a private, loopback or link-local address. | AD-400, AD-401, PC-022 |
+| `network/policy.py` | Applies a provider network scope. A URL must be absolute `http` or `https`, carry no user information, and match a listed `scheme://host:port` destination (host compared case-insensitively, without a trailing dot, IDNA-encoded, IP literals in canonical form) or, with `public_web`, any host over https on port 443. Other ports must be listed. Only a listed destination with `allow_private_address` may resolve to a private, loopback or link-local address. Plain `http` is for the local network only: it needs `allow_outbound_http` and a listed destination with `allow_private_address`, and at connection time every resolved address must be non-public. A host and port listed for http is held to non-public addresses whatever the scheme, because the connection layer does not see the scheme. The configuration check refuses an http destination without `allow_private_address`. | AD-400, AD-401, PC-022 |
 | `network/backend.py` | The `httpcore2` network backend refuses a host and port the scope does not admit before resolving it. It resolves once per connection and refuses the name if any answer is prohibited. It connects to the checked address literal, not the name, and closes the connection if the peer is not that address. Unix sockets are refused. | AD-400, PC-022 |
 | `network/client.py` | `OutboundClient` follows redirects itself, re-checking each hop, with a redirect limit. HTTP method and body follow 301/302/303/307/308 semantics. A `Credential` is bound to one origin and is attached only while the request stays there; after a redirect leaves it, it is never sent again. Credential headers cannot be passed as ordinary headers. TLS verification cannot be disabled, and TLS 1.2 is the minimum; a private CA bundle may be supplied. Proxy environment variables are ignored. The body size and the total time are bounded. Failures are classified as `denied`, `unresolved`, `connect`, `tls`, `timeout`, `redirect_limit`, `too_large` or `protocol`. | AD-398, AD-400, AD-401, PC-022, PC-023 |
 
@@ -627,10 +627,18 @@ Validation on 2026-11-27 (same environment): `scripts/check.sh` passed with 1207
 Refinement of S3, accepted by the maintainer on 2026-11-27: S3 says that each allowed engine is mapped to the hosts it may contact, and that the proxy enforces the mapping. A CONNECT tunnel does not say which engine opened it, so the proxy enforces the scope as a whole: the union of the approved destinations. The mapping is therefore operator configuration (the scope lists exactly the hosts the configured engines need, as the sample does), not a per-engine check. Per-engine enforcement would need one relay port per engine, each with its own scope, and SearXNG's per-engine proxy settings.
 
 Network-scope semantics (the schema defines the fields but not their meaning):
-- `public_web` admits only the standard port: 443 for https, and 80 for plain http when `allow_outbound_http` is set. Any other port must be a listed destination. Decided by the maintainer, 2026-11-27.
-- A listed destination without `allow_private_address` must resolve only to public addresses. `allow_private_address` admits private, loopback and link-local addresses, but never metadata, unspecified, multicast or broadcast addresses.
-- A credential is never re-sent within a request once a redirect has left its origin, even if a later hop returns there.
-- The last two points are interpretations still open for maintainer review.
+- `public_web` admits https on port 443 only, and never plain http. Any other port must be a listed destination. Decided by the maintainer, 2026-11-27: standard TLS port only, no plain http on the public web.
+- Plain http is for local network use only. It needs `allow_outbound_http` and a listed destination with `allow_private_address`, and every address it resolves to must be non-public (private, loopback or link-local; never metadata). Decided by the maintainer, 2026-11-27.
+- A listed destination without `allow_private_address` must resolve only to public addresses. `allow_private_address` admits private, loopback and link-local addresses, but never metadata, unspecified, multicast or broadcast addresses. Confirmed by the maintainer, 2026-11-27.
+- A credential is never re-sent within a request once a redirect has left its origin, even if a later hop returns there. Confirmed by the maintainer, 2026-11-27.
+
+Query operators, decided by the maintainer on 2026-11-27, for F06: Grenslan may add `site:` and `filetype:` operators to the query sent to engines, to apply domain and file-type constraints. Each such change is recorded with the results (AD-401), and local filtering checks the outcome where that is reliable.
+
+Implementation of the plain-http decision, 2026-11-27:
+- **Policy:** `NetworkPolicy.connection_rule` gives each connection one of three address rules: public only, any reachable address, or non-public only (local http).
+- **Tests:** six new tests. Two existing tests were changed because they relied on plain http to a destination that was not local, or without `allow_outbound_http`; both now test the same peer and address checks with a valid scope.
+- **Validation:** `scripts/check.sh` passed with 1244 tests at that point.
+- **Mutation checks:** six weakenings were each caught: http to unlisted or non-local destinations, the local-address rule, the non-public address check, the connection-level `allow_outbound_http` requirement, and the configuration check. The connection-level requirement needed a test added during the check. One further weakening is equivalent code and cannot be caught: comparing public-web ports with `DEFAULT_PORTS[scheme]` where only https can reach that line.
 
 Limitations:
 - Disclosure scopes (`allow_query` and the rest) are enforced where requests are composed, by providers and the service core, not by this transport layer.
@@ -686,8 +694,58 @@ The smoke test was also run with Docker's default profile substituted for Grensl
 
 Limitations of the container work:
 - **Bridge network on the development host:** Docker's default bridge (`docker0`) does not exist here. Repairing it would mean restarting the Docker daemon, which runs other services, so it was left alone. Builds use `--network host`, and the smoke test uses its own internal network. The image does not depend on either.
-- **Hosts not tested:** hosts that restrict unprivileged user namespaces, through AppArmor on Ubuntu 23.10 and later or `user.max_user_namespaces=0`, are expected to fail closed in the same way. arm64 and rootless Docker are also untested.
+- **Open: Ubuntu 23.10 and later need a workaround.** These hosts set `kernel.apparmor_restrict_unprivileged_userns=1`, which denies unprivileged user namespaces to processes whose AppArmor profile does not allow them. Docker's `docker-default` AppArmor profile does not, so bundled SearXNG is expected to be `unavailable` there even with Grenslan's seccomp profile. It fails closed and never runs unconfined. This is the reference deployment's most common host, so a supported workaround is needed. The maintainer noted on 2026-11-27 that one will most likely be required. It is still to be tested on a real Ubuntu 24.04 host. Candidates:
+  1. **A Grenslan AppArmor profile:** `docker-default` plus a `userns` rule, loaded on the host by the operator and selected with `--security-opt apparmor=grenslan`. This is the narrowest change and parallels the seccomp profile.
+  2. **The host-wide sysctl** `kernel.apparmor_restrict_unprivileged_userns=0`. Simple, but it weakens the whole host, so it should not be the documented default.
+  3. **A separate SearXNG container** (SEARXNG-EGRESS.md option B). This needs no namespaces, but AD-423 rules out a mandatory second container, so it would need an architecture change.
+  
+  Hosts with `user.max_user_namespaces=0` fail closed the same way. Browser sandboxing in a later milestone is expected to meet the same restriction.
+- **Other platforms not tested:** arm64 and rootless Docker.
 - **Build-stage packages:** the build stage installs `git` and `ca-certificates` from Debian at build time, unpinned. They are not in the runtime image.
 - **Upstream TLS:** a completed upstream TLS exchange through the proxy, from inside the container, is not shown, for the same reason as the real-process test above. The smoke network has no route out by design.
 - **Grenslan's own source:** `fetch-sources.sh` covers SearXNG's environment only. If an image is ever distributed, the source set must be extended to Grenslan's environment as well: OpenSSL in cryptography, and the crates of cryptography, pydantic-core and rpds-py.
-- **Gate assessment:** the F05 gate assessment (F-G06, F-G13, F-G14, F-G17, F-G19) is still to be written.
+
+#### Offline installation
+
+`docker/offline-install-test.sh` demonstrates installation with no network from approved dependencies prepared in advance:
+- **Preparation, with network:** builds the Dockerfile's `tools` stage (the pinned base image, Debian's `git` and `ca-certificates`, pinned uv). Downloads the hash-locked wheels of both environments with `pip download --require-hashes`, builds Grenslan's wheel, and mirrors SearXNG's pinned commit into a local bare repository.
+- **Installation, with `--network none`:** installs Grenslan with `uv pip install --offline --no-index --require-hashes`. Installs SearXNG with `install.sh`, which now accepts `SEARXNG_GIT_URL` for a local mirror (the commit is still verified), with pip's `PIP_NO_INDEX` and `PIP_FIND_LINKS` (hashes still verified).
+
+Run on 2026-11-27: 42 Grenslan and 32 SearXNG wheels were prepared, and all four checks passed:
+- Grenslan installed offline;
+- SearXNG installed offline;
+- the notices check matched the offline-installed packages;
+- both environments import and run. The Grenslan CLI works, SearXNG reports its pinned version `2026.9.21+df67eb6c2`, and Granian starts.
+
+Negative check: a wheel altered by one byte was refused offline with pip's hash-mismatch error, while the intact wheel installed.
+
+#### Diagnostics
+
+`test_output_after_startup_is_discarded` covers what SearXNG writes once healthy. A fake SearXNG prints text resembling a query after reporting healthy, and nothing is retained. Removing either discard step fails the test.
+
+Validation after the final changes, on 2026-11-27:
+- `scripts/check.sh` passed with 1245 tests.
+- The image was rebuilt, and `docker/smoke-test.sh` passed all 13 checks.
+
+#### F05 gate assessment
+
+Foundation gates are assessed together at the milestone gate. This records what F05 evidences and what remains for later packages.
+
+| Gate | Evidence from F05 | Remaining |
+|---|---|---|
+| **F-G06** | The SearXNG provider handles multiple upstream engines:<br>- It normalizes URL, title, snippet, rank and attribution (primary and additional engines, publish date, image fields), and drops results without a web URL.<br>- Outcomes are distinct: completed-empty, partial (naming failed engines), failed, rate-limited and refused (`test_searxng_provider.py`, 49 tests).<br>- **Bundled smoke:** the real pinned SearXNG starts confined through `ProviderSet`, is `ready`, searches and shuts down (integration tests and container smoke checks 3, 9a and 11).<br>- **External smoke:** search by POST and health through outbound enforcement, against a loopback instance.<br>- The fixture provider is registered through the same registry (F04). | Replacing SearXNG with the alternate fixture provider without changing the public contract needs `web_search` wired to providers (F06). The T-423 credential case for external instances needs a secret store; `credential_ref` is refused explicitly until then. |
+| **F-G13** | Connection-level enforcement in `PolicyBackend` and `OutboundClient`, all of it at the connection, not only on input URLs:<br>- Private, loopback, link-local, metadata, unspecified, multicast and broadcast addresses are denied, including embedded IPv4 forms (mapped, NAT64, 6to4, Teredo) and literals.<br>- A name is resolved once, and denied if any answer is prohibited; the backend connects to the checked literal and verifies the peer. This covers DNS change and rebinding.<br>- Every redirect hop is checked.<br>- The approved private exception applies only to listed destinations with `allow_private_address`. Plain http is limited to listed local destinations.<br>- The egress proxy applies the same checks to SearXNG's tunnels (container check 9b). Mutation checks are recorded above. | None for the search portion. Retrieval-time enforcement (browser and direct HTTP) is PRP-002. |
+| **F-G14** | **Credentials:** bound to one origin, never re-sent after a redirect leaves it, and refused as ordinary headers.<br>**Query disclosure:**<br>- The bundled provider will not start unless its disclosure scope allows queries to external destinations.<br>- Each search names exactly the configured engines, and no unlisted engine exists in the generated settings.<br>- No user, agent or application context is sent: the exact request form is asserted.<br>- The egress proxy refuses unlisted hosts.<br>**Diagnostics:** configuration problems name locations, never values. SearXNG's output is discarded once healthy. The proxy logs host and port only. Logged provider issue reasons are escaped and bounded. | Fallback routing, and disclosure checks across providers in the service core, come with `web_search` routing (F06) and bounded execution (F07). Prompt-like text in results is carried only as typed data, and no code path interprets it; an end-to-end test needs the public search tool (F06). |
+| **F-G17** | Container smoke test (13 checks):<br>- a non-root image with no added capabilities and no Docker socket;<br>- ingress only on the configured HTTPS port;<br>- an untrusted probe container finds no other open port in a full scan;<br>- SearXNG and its egress proxy are reachable only through owner-only Unix sockets in a 0700 directory, which another uid cannot use;<br>- a confined process has only loopback and no route out;<br>- SearXNG is separately supervised: it fails closed without the profile, and `docker stop` gives a controlled shutdown. | Validated on one host (Docker 29.8.2 on WSL2, x86_64). Ubuntu 23.10 and later need a workaround (see the limitations above); arm64 and rootless Docker are untested. |
+| **F-G19** | - **SearXNG distribution:** recorded by commit, version and reference image digest (`packaging/searxng/SOURCE`), with a hash-locked environment, a provider manifest and an AGPL notice. The installed tree keeps the full source.<br>- **Licences:** inventoried for every package and every compiled-in library and crate (DEPENDENCIES.md). Notices are installed in the image, and the build checks them against what is installed.<br>- **Source availability:** settled with the maintainer.<br>- **Offline installation:** demonstrated, with hash and commit verification.<br>- **No startup downloads:** the service starts, with bundled SearXNG `ready`, under `--network none`. It serves `capabilities_get` on the smoke network, which has no route out. A disabled provider reports `disabled` (F04). | Disabling external providers and reporting capabilities is evidenced at the F04 level. The deployment and licence suite as a whole belongs to PRP-006. |
+
+**F05 deliverables:**
+- the protected bundled and external integration fixtures (integration tests and `examples/providers.yaml`);
+- egress policy tests (`tests/unit/network/`);
+- the isolated-endpoint smoke test (`docker/smoke-test.sh`);
+- the licence inventory (DEPENDENCIES.md, `packaging/notices/`).
+
+All are present. F05 is complete for review, with these limitations carried forward:
+- the Ubuntu 23.10 and later workaround;
+- credentials and private CAs for external instances, which need a secret store;
+- the F06 portions of F-G06 and F-G14 listed above.
