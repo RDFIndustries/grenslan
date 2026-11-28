@@ -170,22 +170,38 @@ msgspec, markupsafe and setproctitle contain only their own code.
   - the source and build scripts of the program it is linked into (curl_cffi and curl-impersonate, lxml);
   - the LGPL text.
 
-  The official SearXNG image ships the same wheels. Grenslan meets this obligation by publishing the source, as decided below.
+  The official SearXNG image ships the same wheels. Grenslan meets this obligation by publishing the source, as recorded under "Source for bundled components" below.
 
-### Corresponding source for compiled libraries
+### Source for bundled components
 
-Decided by the maintainer on 2026-11-27: each release publishes the source archives of the compiled libraries, at the same location as the container image. That covers the LGPL obligation for libidn2, libunistring and libiconv, and it lets anyone audit or rebuild those packages. The archives are:
-- libidn2 2.3.7 and GNU libiconv 1.18;
-- curl-impersonate v2.2.2, with every dependency source its build fetches;
-- the curl_cffi 0.16.3 and lxml 6.1.3 source distributions.
+Decided by the maintainer on 2026-11-27: each release publishes the source of every component in the bundled SearXNG, at the same location as the container image. That meets the LGPL obligation for libidn2, libunistring and libiconv, and it lets anyone audit, modify or rebuild any part. The container's notices say where the source is.
 
-The packages themselves stay identical to the official SearXNG image. The container's notices say where the archives are. `packaging/searxng/sources.lock` pins each archive's URL and SHA-256 hash, and `packaging/searxng/fetch-sources.sh` downloads and verifies them for a release.
+SearXNG's own source is installed with it (S6). Everything else is pinned by URL and SHA-256 in three locks under `packaging/searxng/`, and `fetch-sources.sh OUTDIR` downloads and verifies it into one source directory:
 
-The lock also covers the source distributions of the other packages with compiled code (granian, pyyaml, cffi, msgspec, markupsafe, setproctitle) and the C libraries they embed (libyaml 0.2.5, libffi 3.4.6). That gives 24 archives, about 108 MB. The Rust crates in Granian are permissively licensed and are not archived. Granian's source distribution records their exact versions in `Cargo.lock`, and its SBOM lists them.
+| Directory | Lock | Contents |
+|---|---|---|
+| `native/` | `sources.lock`, maintained by hand | Libraries compiled into the wheels: libcurl-impersonate v2.2.2 with curl, BoringSSL, nghttp2, ngtcp2, nghttp3, brotli, zstd, zlib and libidn2 (whose archive includes its libunistring subset); libxml2, libxslt, zlib and GNU libiconv for lxml; libyaml and libffi |
+| `python/` | `sources-python.lock`, generated | The PyPI source distribution of every package in `requirements.lock` |
+| `crates/` | `sources-crates.lock`, generated | Every crate in Granian's `Cargo.lock` (190), the same set `cargo vendor` uses, so Granian can be rebuilt on any platform |
+
+`lock-sources.py` regenerates the two generated locks from `requirements.lock` and Granian's source distribution. Run it whenever the SearXNG pin changes.
+
+Where each hash comes from:
+- Python packages: PyPI's published hashes.
+- Registry crates: the checksums in `Cargo.lock`.
+- curl-impersonate's dependencies: its own `CMakeLists.txt`.
+- libidn2 and libiconv: computed after checking their GNU signatures with `gpgv`. They were signed by Simon Josefsson and Bruno Haible respectively.
+- The remaining native archives and the two git-sourced crates (`interprocess`, `tls-listener`): computed from GitHub archives of their release tag or locked commit. GitHub does not guarantee that such archives stay byte-identical. If one ever changes, the fetch fails and its hash must be checked again.
+
+pip is not pinned. It comes with whichever Python creates the environment, and container packaging deals with it.
 
 Verification on 2026-11-27:
-- All 24 archives downloaded and matched their pinned hashes, including the nine whose hashes come from curl-impersonate's own build file.
-- The libidn2 and libiconv archives passed `gpgv` against the GNU keyring (signed by Simon Josefsson and Bruno Haible).
-- A second run kept every valid file. A tampered file was downloaded again.
-- A wrong pinned hash stopped the run with status 1 and left nothing behind.
-- A lock entry naming `../x` was refused.
+- All 238 archives downloaded into the three directories (102 MB native, 28 MB Python, 43 MB crates) and matched their hashes. `SHA256SUMS` rechecked clean.
+- A second run kept every file.
+- Running the generator a second time produced identical locks.
+- Each of these stopped the run with status 1 and left no files behind:
+  - a wrong pinned hash;
+  - a path escaping its directory (`native/../x`);
+  - an unknown directory;
+  - a malformed hash;
+  - an `http` URL.
