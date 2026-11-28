@@ -639,4 +639,55 @@ Limitations:
 - The proxy carries https tunnels only. A SearXNG engine needing plain http would need an explicit decision first.
 - Proxy timeouts, the tunnel limit, SearXNG's thread count, request timeouts and startup timeout are constructor arguments. Their configured values come with the SearXNG provider's adapter settings.
 - The real-process test shows that approved and unapproved tunnels are handled correctly. A completed upstream TLS exchange through the tunnel is not shown, because that would need the internet or a trusted fixture certificate for a real engine host.
-- Running in the container needs the Grenslan seccomp profile (S2), which comes with the container work.
+- Running in the container needs Grenslan's seccomp profile (S2). See "Container, seccomp profile and notices" below.
+
+#### Container, seccomp profile and notices
+
+| Item | Implementation | Decisions |
+|---|---|---|
+| Seccomp profile | `docker/seccomp.json` is Docker's default profile (moby/profiles `seccomp/v0.2.3`, byte-identical to the copy vendored in Docker Engine 29.8.2) plus one rule. The rule allows `unshare` only when its flags equal `CLONE_NEWUSER \| CLONE_NEWNET`. `docker/seccomp.py` regenerates the profile; a test asserts it is exactly the default plus that rule, and that it is current. | S2 |
+| Image | `docker/Dockerfile`, multi-stage:<br>- **Pinned inputs:** the base image `python:3.12-slim` (Debian 13.8, Python 3.12.16) and uv 0.13.10, both by digest.<br>- **Grenslan:** installed from `uv export --no-dev` with `--require-hashes`, in a venv without pip.<br>- **SearXNG:** installed with `packaging/searxng/install.sh`, after which pip is removed from its venv. pip is also removed from the runtime base.<br>- **Runtime:** uid and gid 10001, `ENTRYPOINT grenslan serve`, port 8443. | AD-423, S1, S4, S6 |
+| Notices | `packaging/notices/` (see DEPENDENCIES.md) is checked during the build. Licence files of every Python package in both environments are copied, and all notices are installed under `/usr/share/doc/grenslan/`. SearXNG's complete source stays in `/opt/grenslan/searxng/src`. | AD-423, PRP-001 F05 |
+| SearXNG temporary files | SearXNG puts its cache databases (`sxng_cache_*.db`) in `tempfile.gettempdir()`. The confined child now gets `TMPDIR` set to the private 0700 runtime directory. Before, they landed in the shared `/tmp`, readable by all and never removed. Earlier runs of the integration test had left six such files in the development host's `/tmp`; they were removed. | S1 |
+| Operator diagnostics | A provider state transition now logs its first issue, for example `initializing -> unavailable (provider_unavailable: SearXNG cannot be confined on this host: ... In a container, run it with Grenslan's seccomp profile (docker/README.md).)`. Before, an operator saw only the state. Issue messages are required to be safe (PROVIDER_CONTRACT). The log line also escapes control characters and is bounded to 500 characters. | PC-010 |
+
+Validation on 2026-11-27 (Docker Engine 29.8.2 on WSL2, Linux 5.15.167.4, x86_64, cgroup v1, no AppArmor):
+- **Seccomp:** the profile was exercised directly, by a non-root process with no capabilities and `no-new-privileges`.
+  - Under Docker's default, every namespace combination was refused (`EPERM`).
+  - Under Grenslan's profile, only `CLONE_NEWUSER | CLONE_NEWNET` was allowed. Each flag alone, and the pair with `CLONE_NEWNS` or `CLONE_NEWPID` added, was still refused.
+- **Image build:** `docker build --network host -f docker/Dockerfile -t grenslan:dev .` succeeded. The notices check passed inside the build, and licence files were copied for 43 Grenslan and 32 SearXNG packages.
+- **`scripts/check.sh`:** passed with 1237 tests. New tests:
+  - 16 for the notices tool;
+  - 4 for the seccomp profile;
+  - 2 for logged reasons;
+  - extended assertions for SearXNG's `TMPDIR`, in a unit test and in the real-process integration test.
+- **Integration test against real SearXNG:** fails without the `TMPDIR` change and passes with it.
+- **Mutation checks:** nine weakenings of `notices.py check`, and three of the logged-reason change, were each caught. A fourth logged-reason weakening survived and showed that its state filter was redundant, so the filter was removed.
+
+Isolated-endpoint smoke test, `docker/smoke-test.sh grenslan:dev`: 13 checks passed in 77 s.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Image user | 10001:10001 |
+| 2 | Docker's default seccomp | bundled SearXNG `unavailable`; the service still starts |
+| 3 | Grenslan's profile | bundled SearXNG `ready` |
+| 4 | Probe container to HTTPS ingress with verified TLS | 401 without a token, 200 `completed` for `capabilities_get` with one |
+| 5 | Full TCP scan (1–65535) of the server from the probe | only 8443 open |
+| 6 | Listening sockets in the server's network namespace | only 8443, besides Docker's embedded DNS resolver on 127.0.0.11, which `dockerd` places in every container on a user-defined network |
+| 7 | Another uid inside the container connects to `searxng.sock` and `egress.sock` | refused: the runtime directory is 0700 and the sockets are 0600 |
+| 8 | A process started with `grenslan.searxng.confine` | sees only `lo`; connections to 1.1.1.1, 172.17.0.1 and 169.254.169.254 fail as unreachable |
+| 9a | Search over SearXNG's socket | 200; all three engines unresponsive, since the internal network has no route out |
+| 9b | CONNECT through the egress proxy | 403 for `example.com:443`, `169.254.169.254:443`, `127.0.0.1:8443`, `grenslan:8443` and `en.wikipedia.org:80`; 502 for the listed `en.wikipedia.org:443`, which passes policy and then has no route |
+| 9c | Name resolution on the smoke network | external names do not resolve |
+| 10 | Docker socket | absent |
+| 11 | `docker stop -t 30` | `stopping -> stopped` without a shutdown warning; exit status 0 in 3 s |
+
+The smoke test was also run with Docker's default profile substituted for Grenslan's. Checks 3, 7, 8, 9a and 9b failed, the script exited 1, and no network or container was left behind.
+
+Limitations of the container work:
+- **Bridge network on the development host:** Docker's default bridge (`docker0`) does not exist here. Repairing it would mean restarting the Docker daemon, which runs other services, so it was left alone. Builds use `--network host`, and the smoke test uses its own internal network. The image does not depend on either.
+- **Hosts not tested:** hosts that restrict unprivileged user namespaces, through AppArmor on Ubuntu 23.10 and later or `user.max_user_namespaces=0`, are expected to fail closed in the same way. arm64 and rootless Docker are also untested.
+- **Build-stage packages:** the build stage installs `git` and `ca-certificates` from Debian at build time, unpinned. They are not in the runtime image.
+- **Upstream TLS:** a completed upstream TLS exchange through the proxy, from inside the container, is not shown, for the same reason as the real-process test above. The smoke network has no route out by design.
+- **Grenslan's own source:** `fetch-sources.sh` covers SearXNG's environment only. If an image is ever distributed, the source set must be extended to Grenslan's environment as well: OpenSSL in cryptography, and the crates of cryptography, pydantic-core and rpds-py.
+- **Gate assessment:** the F05 gate assessment (F-G06, F-G13, F-G14, F-G17, F-G19) is still to be written.

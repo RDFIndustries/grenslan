@@ -48,6 +48,22 @@ unshare -rn true && echo "namespaces available"
 
 `local/` is ignored by git. The tests look for `local/searxng`, or for `GRENSLAN_TEST_SEARXNG_PREFIX`, and are skipped when neither is present. A skipped test means that behaviour is unverified in that environment. They make no internet connections.
 
+## Container
+
+```sh
+docker build -f docker/Dockerfile -t grenslan:dev .
+docker/smoke-test.sh grenslan:dev
+```
+
+`docker/README.md` explains how to run the image with Grenslan's seccomp profile. On a host whose default Docker bridge is unavailable, build with `--network host`. The smoke test uses its own internal network.
+
+When a package with compiled code changes, refresh the notices from a runtime-only environment for each of Grenslan and SearXNG, and review the diff. The image build fails until they match:
+
+```sh
+python3 -I packaging/notices/notices.py collect --cache ~/.cache/grenslan-notices \
+  --site-packages RUNTIME_VENV/lib/python3.12/site-packages local/searxng/venv/lib/python3.12/site-packages
+```
+
 ## Running the service
 
 ```sh
@@ -69,7 +85,9 @@ The configuration is specified in `SERVICE-CONFIGURATION.md`. Provider registrat
 | `tests/integration/` | Tests against a running HTTPS server (`ingress/` covers REST and MCP; `service/` runs the configured service, including `SIGHUP` reload) or a real bundled SearXNG process (`searxng/`). |
 | `examples/` | Reviewed configuration samples; tests validate them. |
 | `tests/support/` | Shared, sanitized test fixtures (`minimal_requests.py`, `config_fixtures.py`, `tls_fixtures.py` for a throwaway CA and server certificate, `ingress_fixtures.py` for a running server with test credentials, `jwt_fixtures.py` for throwaway signing keys and access tokens, `fixture_providers.py` for a controllable fixture search provider registered only by tests, `service_fixtures.py` for service configurations with throwaway consumer tokens, `manifests/` for the fixture's dependency manifest, `example_launcher.py` for the extension launcher pattern), importable from any test. |
-| `packaging/searxng/` | The pinned SearXNG source reference, its hash-locked requirements and its install script. |
+| `packaging/searxng/` | The pinned SearXNG source reference, its hash-locked requirements, its install script, and the source locks with `fetch-sources.sh` and `lock-sources.py`. |
+| `packaging/notices/` | Third-party notices for compiled code: `native.lock`, the committed `native/` and `crates.txt`, and `notices.py` (`collect`, `check`, `copy-python`). |
+| `docker/` | The foundation image, Grenslan's seccomp profile and the container smoke test; see `docker/README.md`. |
 | `scripts/` | `check.sh` (all checks) and `sync-contracts.sh` (copies the adopted tool registry and provider configuration schema into the package). |
 | `docs/contracts/` | Authoritative adopted contracts and schemas. Runtime code reads or derives from these. The one packaged copy, `src/grenslan/contracts/TOOL_SCHEMAS.json`, must stay byte-identical; a test fails if it diverges, and `scripts/sync-contracts.sh` refreshes it. |
 | `docs/implementation/` | Validation record, dependency inventory, this file, and reproducible preflight scripts under `preflight/`. |

@@ -76,6 +76,35 @@ Runtime packages are those `uv export --no-dev` includes. Dev packages are neede
 - SearXNG (AGPL-3.0) is not a Python dependency of this package. Its distribution and corresponding-source obligations are tracked separately in the validation record.
 - Not yet reviewed: licence texts and notice files that must ship in the container, and security advisories for each pinned version.
 
+## Compiled code in Grenslan's environment
+
+Identified on 2026-11-27 from the runtime environment `uv export --no-dev` installs, using the same methods as for SearXNG below. The development tools, such as ruff and mypy, are not part of the runtime or the image.
+
+| Wheel | Compiled into it | Licences |
+|---|---|---|
+| cryptography 50.0.2 | OpenSSL 4.0.3, recorded with its hash in the wheel's `sbom.json`; 39 Rust crates in its CycloneDX SBOM | Apache-2.0 (OpenSSL); crates MIT and/or Apache-2.0 |
+| pydantic-core 2.50.5 | 101 Rust crates, from its SBOM | Permissive (MIT, Apache-2.0, BSD, Unicode-3.0 and similar) |
+| rpds-py 2026.9.1 | 17 Rust crates, from its SBOM | Permissive |
+| pyyaml 6.0.4 | libyaml 0.2.6, built from its git tag by pyyaml's release workflow | MIT |
+| cffi 2.1.1 | libffi 3.4.6 | MIT |
+
+No LGPL or GPL code is compiled into Grenslan's environment.
+
+### How notices are kept
+
+`packaging/notices/` holds the notices for all compiled code in both environments:
+- `native.lock`: each native library, the source archive its licence files come from (by hash), and the exact wheel versions that embed it. It also lists the compiled wheels that contain only their own code (markupsafe, msgspec, setproctitle).
+- `native/`: those licence files, extracted from the verified archives.
+- `crates.txt`: the licence files of every Rust crate in the installed wheels' SBOMs (272 crates across granian, cryptography, pydantic-core and rpds-py), with texts that repeat referenced instead of duplicated.
+  - Each crate download is verified against the SBOM's hash where it has one. Otherwise it is verified against the `Cargo.lock` in the wheel's PyPI source distribution, itself verified against PyPI's hash.
+  - The SBOMs list every platform's dependencies, so a few crates are never compiled on Linux. Two of those (`r-efi`, `wit-bindgen-rt`) ship no licence file; their declared licence is recorded instead.
+- `notices.py`:
+  - `collect` regenerates the notices. A second run produces identical output.
+  - `check` runs during the image build. It fails unless every installed wheel with compiled code is accounted for at its exact version, every SBOM crate has a notice, no entry is stale, and every installed package has licence files.
+  - `copy-python` copies each package's own licence files into the image.
+
+The image installs all of this under `/usr/share/doc/grenslan/`, described by `docker/NOTICE.md`.
+
 ## Bundled SearXNG (separate environment)
 
 SearXNG is a separately managed component (AD-423). It is not a Grenslan dependency, and nothing in Grenslan imports it. `packaging/searxng/install.sh` installs its complete source at the pinned commit (`packaging/searxng/SOURCE`) and its own virtual environment from `packaging/searxng/requirements.lock`. The lock is hash-verified, Linux-only, and identical for x86_64 and aarch64, and every version equals the official image of the same commit. Grenslan runs SearXNG only as a confined child process, through its HTTP interface on a Unix socket.
