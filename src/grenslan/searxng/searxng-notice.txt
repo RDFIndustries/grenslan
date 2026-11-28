@@ -1,0 +1,16 @@
+SearXNG
+Copyright SearXNG contributors (https://github.com/searxng/searxng/blob/master/AUTHORS.rst)
+Licensed under the GNU Affero General Public License, version 3 or later (AGPL-3.0-or-later).
+
+Grenslan runs SearXNG as a separately managed process and communicates with
+it only through its HTTP interface. Grenslan does not incorporate SearXNG
+source code.
+
+Bundled build: commit df67eb6c2608c5b2f909ed7c42b0a4bd3823f78f (version 2026.9.21+df67eb6c2),
+from https://github.com/searxng/searxng.
+
+Corresponding source: the complete source of the bundled build, including
+its LICENSE file, is installed with it, in the src directory of the
+SearXNG installation (for example <install_prefix>/src). It is also
+available from the repository above at that commit. packaging/searxng/ in
+the Grenslan source records how it is installed.

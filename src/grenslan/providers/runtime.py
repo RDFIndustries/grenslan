@@ -90,7 +90,7 @@ class ProviderSet:
             timeout_ms = min(global_timeout, int(settings["limits"].get("timeout_ms", global_timeout)))
             instance = _Instance(provider_id, settings["family"], timeout_ms / 1000)
             if settings["enabled"]:
-                instance.provider, instance.description = registry.create(provider_id, settings)
+                instance.provider, instance.description = registry.create(provider_id, config)
             else:
                 instance.health = Health(state="disabled")
             instances[provider_id] = instance

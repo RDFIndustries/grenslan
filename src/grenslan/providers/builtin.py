@@ -10,10 +10,11 @@ this list, to ``grenslan.cli.main`` from a launcher in a derived image
 from __future__ import annotations
 
 from grenslan.providers.registry import Implementation, ImplementationRegistry
+from grenslan.searxng.provider import implementation as searxng
 
 
 def builtin_implementations() -> list[Implementation]:
-    return []
+    return [searxng()]
 
 
 def builtin_registry() -> ImplementationRegistry:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -79,3 +80,15 @@ async def test_the_child_receives_only_a_minimal_environment(tmp_path: Path, mon
     environment = json.loads(seen.read_text())
     environment.pop("LC_CTYPE", None)  # may be added by the interpreter itself
     assert sorted(environment) == ["HOME", "LANG", "PATH", "PYTHONDONTWRITEBYTECODE", "SEARXNG_SETTINGS_PATH"]
+
+
+@pytest.mark.parametrize("recorded", ["commit=0000000000000000000000000000000000000000\n", None])
+async def test_an_installation_of_another_build_is_refused(tmp_path: Path, recorded: str | None) -> None:
+    (tmp_path / "run").mkdir()
+    prefix = fake_install(tmp_path / "install")
+    if recorded is not None:
+        (prefix / "SOURCE").write_text(recorded)
+    expected = dataclasses.replace(settings(prefix, tmp_path / "run"), expected_commit="df67eb6c" + "0" * 32)
+    with pytest.raises(SearxngUnavailable, match="not the expected build"):
+        await BundledSearxng(expected, POLICY).start()
+    assert list((tmp_path / "run").iterdir()) == []

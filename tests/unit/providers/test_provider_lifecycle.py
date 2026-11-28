@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -12,10 +13,12 @@ from pathlib import Path
 import pytest
 
 from grenslan.config.provider_config import ConfigValidationError, ProviderConfig, validate_provider_config
-from grenslan.providers.contract import CapabilityDeclaration
+from grenslan.providers.contract import CapabilityDeclaration, Provider
 from grenslan.providers.registry import (
+    ConfigurationProblem,
     Implementation,
     ImplementationRegistry,
+    InstanceSettings,
     ProviderRegistrationError,
 )
 from grenslan.providers.runtime import ProviderSet
@@ -258,3 +261,34 @@ def test_unsupported_platform_stops_registration() -> None:
     registry = ImplementationRegistry([fixtures.implementation()], platform="linux-x86_64")
     with pytest.raises(ProviderRegistrationError, match="platform"):
         registry.check(config("primary", registry=registry))
+
+
+def test_factories_receive_resolved_scopes_and_effective_limits() -> None:
+    received: list[InstanceSettings] = []
+    fixtures = FixtureSet()
+    base = fixtures.implementation()
+
+    def factory(settings: InstanceSettings) -> Provider:
+        received.append(settings)
+        return base.factory(settings)
+
+    registry = ImplementationRegistry([dataclasses.replace(base, factory=factory)])
+    loaded = config("one", registry=registry, timeout_ms=1500)
+    registry.check(loaded)
+    (settings,) = received
+    assert settings.network_scope == loaded.data["network_scopes"]["public_web"]
+    assert settings.disclosure_scope == loaded.data["disclosure_scopes"]["search_queries"]
+    assert settings.limits["timeout_ms"] == 1500
+    assert settings.limits["max_items"] == loaded.data["limits"]["max_items"]
+
+
+def test_a_configuration_problem_from_a_factory_is_reported_with_its_message() -> None:
+    fixtures = FixtureSet()
+    base = fixtures.implementation()
+
+    def factory(settings: InstanceSettings) -> Provider:
+        raise ConfigurationProblem("adapter_settings/engines", "at least one engine is required")
+
+    registry = ImplementationRegistry([dataclasses.replace(base, factory=factory)])
+    with pytest.raises(ProviderRegistrationError, match=r"'one'.*adapter_settings/engines: at least one engine"):
+        registry.check(config("one", registry=registry))

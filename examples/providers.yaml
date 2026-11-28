@@ -1,0 +1,86 @@
+# Reviewed sample provider configuration: bundled SearXNG with three engines.
+# Specification: docs/contracts/PROVIDER_CONTRACT.md and PROVIDER_CONFIG_SCHEMA.json;
+# the searxng settings are described in src/grenslan/searxng/provider.py.
+# Limits are illustrative, not recommendations.
+config_version: "1.0"
+deployment_mode: connected
+limits:
+  max_input_bytes: 1048576
+  max_download_bytes: 52428800
+  max_output_bytes: 1048576
+  max_temp_bytes: 268435456
+  max_memory_bytes: 536870912
+  max_cpu_ms: 60000
+  max_pixels: 50000000
+  max_expansion_bytes: 104857600
+  max_recursion: 16
+  max_items: 100
+  timeout_ms: 30000
+  max_concurrency: 8
+  max_redirects: 5
+  max_retries: 2
+providers:
+  searxng_bundled:
+    family: search
+    implementation: searxng
+    enabled: true
+    network_scope: searxng_engines
+    disclosure_scope: search_queries
+    limits:
+      timeout_ms: 10000
+      max_concurrency: 4
+    search:
+      deployment: internal
+      # Only these engines are loaded. Each needs its hosts in the network scope.
+      upstream_engines: [wikipedia, duckduckgo, brave]
+    adapter_settings:
+      categories: [general]
+      engine_timeout_ms: 3000
+      install_prefix: /opt/grenslan/searxng
+      startup_timeout_ms: 9000
+  # An approved external instance instead (needs no install_prefix):
+  #
+  # searxng_external:
+  #   family: search
+  #   implementation: searxng
+  #   enabled: true
+  #   endpoint: {url: "https://search.example.org"}
+  #   network_scope: external_searxng
+  #   disclosure_scope: search_queries
+  #   limits: {timeout_ms: 10000}
+  #   search: {deployment: external, upstream_engines: [wikipedia, duckduckgo]}
+  #   adapter_settings: {categories: [general], engine_timeout_ms: 3000}
+routing:
+  search: [searxng_bundled]
+  retrieval: []
+  browser: []
+  content: []
+  ocr: []
+  intelligence: []
+network_scopes:
+  # The hosts these engines contacted when searching, observed on 2026-11-27
+  # (docs/implementation/SEARXNG-EGRESS.md). Other engines need their own hosts.
+  searxng_engines:
+    public_web: false
+    allow_outbound_http: false
+    destinations:
+      - {scheme: https, host: en.wikipedia.org, port: 443}
+      - {scheme: https, host: html.duckduckgo.com, port: 443}
+      - {scheme: https, host: search.brave.com, port: 443}
+disclosure_scopes:
+  search_queries:
+    allow_query: true
+    allow_document_content: false
+    allow_images: false
+    allow_credentials: false
+    allow_external: true
+credential_refs: {}
+browser_profiles: {}
+optional_intelligence_enabled: false
+cache:
+  max_bytes: 1073741824
+  artifact_lifetime_ms: 3600000
+  operation_lifetime_ms: 3600000
+  cursor_lifetime_ms: 900000
+  default_freshness_ms: 0
+  share_eligible_public_content: false

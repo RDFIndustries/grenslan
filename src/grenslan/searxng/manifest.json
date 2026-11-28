@@ -1,0 +1,20 @@
+{
+  "manifest_version": "1.0",
+  "manifest_id": "searxng",
+  "implementation_id": "searxng",
+  "implementation_version": "0.1.0.dev0",
+  "family": "search",
+  "contract_version": "1.0",
+  "supported_platforms": ["linux-x86_64", "linux-aarch64"],
+  "distributions": [
+    { "name": "anyio", "version": "4.16.0", "license": "MIT" },
+    { "name": "httpcore2", "version": "2.16.2", "license": "BSD-3-Clause" }
+  ],
+  "files": [],
+  "license_notices": ["searxng-notice.txt"],
+  "known_limitations": [
+    "Bundled mode runs the SearXNG build installed by packaging/searxng/install.sh, in a separate environment. Its integrity comes from that script (pinned commit and hash-locked dependencies), and the provider checks the recorded commit at startup. Its files are not individually listed here because their location is configured.",
+    "Bundled mode needs unprivileged user and network namespaces; without them the provider is unavailable.",
+    "An external instance's own upstream traffic is outside Grenslan's control."
+  ]
+}

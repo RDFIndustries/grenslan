@@ -64,6 +64,16 @@ class BundledSettings:
     tunnel_idle_timeout: float
     max_tunnels: int
     runtime_parent: Path | None = None
+    # When set, the installation's SOURCE file must record this commit.
+    expected_commit: str | None = None
+
+
+def _recorded_commit(source: Path) -> str | None:
+    try:
+        lines = source.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    return next((line.removeprefix("commit=") for line in lines if line.startswith("commit=")), None)
 
 
 class BundledSearxng:
@@ -115,6 +125,13 @@ class BundledSearxng:
         source = settings.install_prefix / "src"
         if not granian.is_file() or not (source / "searx" / "webapp.py").is_file():
             raise SearxngUnavailable(f"SearXNG is not installed at {settings.install_prefix}")
+        if settings.expected_commit is not None:
+            recorded = _recorded_commit(settings.install_prefix / "SOURCE")
+            if recorded != settings.expected_commit:
+                raise SearxngUnavailable(
+                    f"the SearXNG installation at {settings.install_prefix} is not the expected build "
+                    f"(commit {recorded or 'unknown'}, expected {settings.expected_commit})"
+                )
         runtime = Path(tempfile.mkdtemp(prefix="grenslan-searxng-", dir=settings.runtime_parent))
         self._runtime = runtime
         try:

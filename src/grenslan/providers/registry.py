@@ -20,7 +20,7 @@ as well as at startup, and all I/O belongs in ``initialize``.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -65,12 +65,32 @@ class ProviderRegistrationError(Exception):
     """A configured provider instance does not match its registered implementation."""
 
 
+class ConfigurationProblem(Exception):
+    """Raised by a factory for an invalid instance configuration.
+
+    The location and reason are reported, so they must name settings and
+    rules only, never configured values or secrets.
+    """
+
+    def __init__(self, location: str, reason: str) -> None:
+        super().__init__(f"{location}: {reason}")
+
+
 @dataclass(frozen=True, slots=True)
 class InstanceSettings:
-    """What an implementation's factory receives: the instance ID and its validated configuration."""
+    """What an implementation's factory receives.
+
+    This is the instance ID and its validated configuration, together with
+    its resolved network and disclosure scopes (``None`` if not configured)
+    and its effective limits: the global limits with the instance's
+    reductions applied.
+    """
 
     provider_id: str
     settings: Mapping[str, Any]
+    network_scope: Mapping[str, Any] | None = None
+    disclosure_scope: Mapping[str, Any] | None = None
+    limits: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,14 +118,24 @@ class ImplementationRegistry:
         """The implementations configuration may select, for provider configuration validation."""
         return {implementation_id: impl.spec() for implementation_id, impl in self._by_id.items()}
 
-    def create(self, provider_id: str, settings: Mapping[str, Any]) -> tuple[Provider, ProviderDescription]:
+    def create(self, provider_id: str, config: ProviderConfig) -> tuple[Provider, ProviderDescription]:
         """Create a configured instance and check its declaration; raises ProviderRegistrationError."""
+        settings = config.providers[provider_id]
         implementation = self._by_id.get(settings["implementation"])
         if implementation is None:
             raise ProviderRegistrationError(f"provider {provider_id!r}: implementation is not registered")
+        instance = InstanceSettings(
+            provider_id,
+            settings,
+            network_scope=config.data["network_scopes"].get(settings.get("network_scope")),
+            disclosure_scope=config.data["disclosure_scopes"].get(settings.get("disclosure_scope")),
+            limits={**config.data["limits"], **settings["limits"]},
+        )
         try:
-            provider = implementation.factory(InstanceSettings(provider_id, settings))
+            provider = implementation.factory(instance)
             description = provider.describe()
+        except ConfigurationProblem as invalid:
+            raise ProviderRegistrationError(f"provider {provider_id!r}: {invalid}") from None
         except Exception:  # noqa: BLE001 - provider failures are contained, never surfaced raw
             # The exception text may carry configuration or secrets, so only its type is reported.
             raise ProviderRegistrationError(f"provider {provider_id!r}: implementation could not be created") from None
@@ -122,7 +152,7 @@ class ImplementationRegistry:
         """Register every enabled instance without initializing it, as ``check-config`` does."""
         for provider_id, settings in config.providers.items():
             if settings["enabled"]:
-                self.create(provider_id, settings)
+                self.create(provider_id, config)
 
 
 def _declaration_problem(
