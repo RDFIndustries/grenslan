@@ -84,6 +84,8 @@ Original Grenslan code is licensed under the [Apache License, Version 2.0](LICEN
 
 Third-party components retain their respective licenses. The bundled SearXNG component is licensed under AGPL-3.0-or-later and runs as a separate, confined process through its service interface. The repository contains no third-party binaries: `packaging/searxng/install.sh` fetches SearXNG's pinned source and hash-locked dependencies at install time. The [dependency inventory](docs/implementation/DEPENDENCIES.md) lists every component and the libraries compiled into its wheels, with their licences.
 
+Source for the bundled components is published with each release on the [GitHub Releases page](https://github.com/RDFIndustries/grenslan/releases), next to the container image it belongs to, and stays available for as long as that image is offered. It covers SearXNG, every Python package and Rust crate in its environment, and every native library compiled into them. SearXNG is AGPL-3.0, and some of those libraries are LGPL (libidn2, libunistring, GNU libiconv). Their licences require that anyone who receives the binaries can obtain the corresponding source, and it also lets you audit, modify or rebuild any part. The container itself carries the licence texts and notices, and says where this source is. To assemble the same source set yourself, run `packaging/searxng/fetch-sources.sh OUTDIR`.
+
 Before distributing a reference image or release, the project will publish applicable third-party license texts, copyright notices, component inventory and required corresponding-source information in both the repository and container. The README will link to those materials as they become available.
 
 ---

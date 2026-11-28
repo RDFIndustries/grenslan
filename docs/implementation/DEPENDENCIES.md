@@ -174,7 +174,19 @@ msgspec, markupsafe and setproctitle contain only their own code.
 
 ### Source for bundled components
 
-Decided by the maintainer on 2026-11-27: each release publishes the source of every component in the bundled SearXNG, at the same location as the container image. That meets the LGPL obligation for libidn2, libunistring and libiconv, and it lets anyone audit, modify or rebuild any part. The container's notices say where the source is.
+Decided by the maintainer on 2026-11-27: each release publishes the source of every component in the bundled SearXNG as a release asset on the GitHub Releases page, next to the container image it belongs to. It stays available for as long as that image is offered. That meets the AGPL and LGPL obligations for SearXNG, libidn2, libunistring and libiconv, and it lets anyone audit, modify or rebuild any part.
+
+The source is not included in the container or committed to the repository. The basis:
+- The obligation falls on whoever conveys the binaries. The repository contains no third-party binaries: `install.sh` fetches them at build time.
+- GPL-3.0 §6(d) (applied by AGPL-3.0, and by LGPL-3.0 §4(d)) and LGPL-2.1 §6(d) let a distributor offer the source from the same place as the binary, or from another server with clear directions beside the binary.
+- MPL-2.0 §3.2 requires telling recipients how to obtain the source.
+
+The container must therefore carry:
+- the licence texts: AGPL-3.0, GPL-3.0, LGPL-3.0, LGPL-2.1 and MPL-2.0;
+- the permissive notices listed above;
+- a statement of where the release's source is published.
+
+Anyone who redistributes an image they built has the same obligation for their copy.
 
 SearXNG's own source is installed with it (S6). Everything else is pinned by URL and SHA-256 in three locks under `packaging/searxng/`, and `fetch-sources.sh OUTDIR` downloads and verifies it into one source directory:
 
